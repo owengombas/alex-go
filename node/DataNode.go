@@ -4,7 +4,6 @@ import (
 	"alex_go/cost_models"
 	"alex_go/linear_model"
 	"alex_go/shared"
-	"fmt"
 	"unsafe"
 )
 
@@ -530,11 +529,9 @@ func (self *DataNode) Resize(targetDensity float64, forceRetrain bool, keepLeft 
 	if self.NumKeys < shared.NumKeysDataNodeRetrainThreshold || forceRetrain {
 		linearModelBuilder := linear_model.NewLinearModelBuilder(&self.LinearModel)
 		self.IterateFilledPositions(func(key shared.KeyType, payload shared.PayloadType, i int, j int) {
-			fmt.Println("--->", key, payload, i, j)
 			linearModelBuilder.Add(float64(key), float64(j))
 		}, 0, self.DataCapacity)
 		linearModelBuilder.Build()
-		fmt.Println("a: ", self.LinearModel.A, "b: ", self.LinearModel.B)
 
 		if keepLeft {
 			self.LinearModel.Expand(float64(self.DataCapacity) / float64(self.NumKeys))
@@ -577,7 +574,7 @@ func (self *DataNode) Resize(targetDensity float64, forceRetrain bool, keepLeft 
 				pos++
 			}
 
-			lastPosition = position - 1
+			lastPosition = pos - 1
 			break
 		}
 
@@ -670,6 +667,30 @@ func (self *DataNode) Initialize(numKeys int, density float64) {
 	self.Bitmap = make([]bool, self.DataCapacity)
 }
 
+func (self *DataNode) BulkLoad(values []shared.PayloadType, numKeys int, preTrainedModel *linear_model.LinearModel, trainWithSample bool) {
+	self.Initialize(len(values), shared.KInitialDensity)
+
+	if numKeys == 0 {
+		self.ExpansionThreshold = float64(self.DataCapacity)
+		self.ContractionThreshold = 0.0
+		for i := 0; i < self.DataCapacity; i++ {
+			self.Keys[i] = shared.KEndSentinel
+		}
+		return
+	}
+
+	// Build model
+	if preTrainedModel == nil {
+		self.LinearModel.A = preTrainedModel.A
+		self.LinearModel.B = preTrainedModel.B
+	} else {
+		panic("not implemented")
+	}
+	self.LinearModel.Expand(float64(self.DataCapacity) / float64(numKeys))
+
+	panic("not implemented")
+}
+
 func (self *DataNode) BulkLoadFromExisting(
 	node *DataNode,
 	left int,
@@ -734,20 +755,21 @@ func (self *DataNode) BulkLoadFromExisting(
 				self.Keys[j] = minKey
 			}
 
-			for ; pos < self.DataCapacity; pos++ {
+			for pos < self.DataCapacity {
 				self.Keys[pos] = node.Keys[i]
 				self.Payloads[pos] = node.Payloads[i]
 				self.Bitmap[pos] = true
 
 				i = node.GetNextFilledPosition(i+1, false)
+				pos++
 			}
 
-			lastPosition = position - 1
+			lastPosition = pos - 1
 			break
 		}
 
 		for j := lastPosition + 1; j < position; j++ {
-			self.Keys[j] = minKey
+			self.Keys[j] = node.Keys[i]
 		}
 
 		self.Keys[position] = node.Keys[i]
@@ -763,39 +785,9 @@ func (self *DataNode) BulkLoadFromExisting(
 		self.Keys[i] = shared.KEndSentinel
 	}
 
+	self.MaxKey = self.Keys[lastPosition]
 	self.ExpansionThreshold = min(max(float64(self.DataCapacity)*shared.KMaxDensity, float64(self.NumKeys+1)), float64(self.DataCapacity))
 	self.ContractionThreshold = float64(self.DataCapacity) * shared.KMinDensity
-}
-
-func NewDataNode(dataCapacity int) *DataNode {
-	return &DataNode{
-		NextLeaf:                       nil,
-		PrevLeaf:                       nil,
-		DuplicationFactor:              0,
-		Level:                          0,
-		LinearModel:                    linear_model.LinearModel{},
-		Cost:                           0.0,
-		Payloads:                       make([]shared.PayloadType, dataCapacity),
-		Keys:                           make([]shared.KeyType, dataCapacity),
-		NumKeys:                        0,
-		DataCapacity:                   dataCapacity,
-		Bitmap:                         make([]bool, dataCapacity),
-		ExpansionThreshold:             1.0,
-		ContractionThreshold:           0.0,
-		NumShifts:                      0,
-		NumExpSearchIterations:         0,
-		NumLookups:                     0,
-		NumInserts:                     0,
-		NumResizes:                     0,
-		MaxKey:                         shared.MinKey,
-		MinKey:                         shared.MaxKey,
-		NumRightOutOfBoundsInserts:     0,
-		NumLeftOutOfBoundsInserts:      0,
-		ExpectedAvgExpSearchIterations: 0.0,
-		ExpectedAvgShifts:              0.0,
-		CurrentIteratorPosition:        0,
-		MaxSlots:                       shared.MaxSlots,
-	}
 }
 
 func BuildNodeImplicitFromExisting(
@@ -811,7 +803,7 @@ func BuildNodeImplicitFromExisting(
 	keysRemaining := numActualKeys
 	i := node.GetNextFilledPosition(left, false)
 	for i < right {
-		predictedPosition := max(min(dataCapacity-1, linearModel.Predict(float64(node.Keys[i])), 0))
+		predictedPosition := max(0, min(dataCapacity-1, linearModel.Predict(float64(node.Keys[i]))))
 		actualPosition := max(predictedPosition, lastPosition+1)
 		positionRemaining := dataCapacity - actualPosition
 		if positionRemaining < keysRemaining {
@@ -845,7 +837,7 @@ func ComputeExpectedCostFromExisting(
 
 	linearModel := linear_model.NewLinearModel(0, 0)
 	numActualKeys := 0
-	if existingModel != nil {
+	if existingModel == nil {
 		builder := linear_model.NewLinearModelBuilder(linearModel)
 		node.IterateFilledPositions(func(key shared.KeyType, payload shared.PayloadType, i int, j int) {
 			builder.Add(float64(key), float64(j))
@@ -881,4 +873,37 @@ func ComputeExpectedCostFromExisting(
 	cost = shared.KExpSearchIterationsWeight*float64(expectedAvgExpSearchIterations) + shared.KShiftsWeight*float64(expectedAvgShifts)*expectedInsertFrac
 
 	return cost, expectedAvgExpSearchIterations, expectedAvgShifts
+}
+
+func NewDataNode(dataCapacity int) *DataNode {
+	dataNode := &DataNode{
+		NextLeaf:                       nil,
+		PrevLeaf:                       nil,
+		DuplicationFactor:              0,
+		Level:                          0,
+		LinearModel:                    linear_model.LinearModel{},
+		Cost:                           0.0,
+		Payloads:                       make([]shared.PayloadType, dataCapacity),
+		Keys:                           make([]shared.KeyType, dataCapacity),
+		NumKeys:                        0,
+		DataCapacity:                   dataCapacity,
+		Bitmap:                         make([]bool, dataCapacity),
+		ExpansionThreshold:             1.0,
+		ContractionThreshold:           0.0,
+		NumShifts:                      0,
+		NumExpSearchIterations:         0,
+		NumLookups:                     0,
+		NumInserts:                     0,
+		NumResizes:                     0,
+		MaxKey:                         shared.MinKey,
+		MinKey:                         shared.MaxKey,
+		NumRightOutOfBoundsInserts:     0,
+		NumLeftOutOfBoundsInserts:      0,
+		ExpectedAvgExpSearchIterations: 0.0,
+		ExpectedAvgShifts:              0.0,
+		CurrentIteratorPosition:        0,
+		MaxSlots:                       shared.MaxSlots,
+	}
+
+	return dataNode
 }

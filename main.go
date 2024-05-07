@@ -60,8 +60,16 @@ func main() {
 	keys, values := readValuesFromFile("values.txt")
 
 	for i := 0; i < len(keys); i++ {
-		fmt.Printf("Key: %d, Value: %d\n", keys[i], values[i])
 		index.Insert(keys[i], values[i])
+	}
+
+	for i := 0; i < len(keys); i++ {
+		payload, err := index.Find(keys[i])
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			fmt.Printf("✅ Key: %d, Value: %d, Payload: %d\n", keys[i], values[i], *payload)
+		}
 	}
 
 	fmt.Println("Hello")

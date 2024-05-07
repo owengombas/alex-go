@@ -70,18 +70,18 @@ const NumKeysDataNodeRetrainThreshold = 50
 const FanoutSelectionMethod int = 0
 
 const (
-	// 0 means always split node in 2
+	// AlwaysSplitNodeInTwo means always split node in 2
 	AlwaysSplitNodeInTwo = iota
-	// 1 means decide between no splitting or splitting in 2
+	// DecideBetweenNoSplittingOrSplittingInTwo means decide between no splitting or splitting in 2
 	DecideBetweenNoSplittingOrSplittingInTwo = iota
-	// 2 means use a full fanout tree to decide the splitting strategy
+	// UseFullFanoutTree means use a full fanout tree to decide the splitting strategy
 	UseFullFanoutTree = iota
 )
 
-// Policy when a data node experiences significant cost deviation.
+// SplittingPolicyMethod Policy when a data node experiences significant cost deviation.
 const SplittingPolicyMethod int = DecideBetweenNoSplittingOrSplittingInTwo
 
-// Splitting upwards means that a split can propagate all the way up to the
+// AllowSplittingUpwards Splitting upwards means that a split can propagate all the way up to the
 // root, like a B+ tree
 // Splitting upwards can result in a better RMI, but has much more overhead
 // than splitting sideways

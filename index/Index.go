@@ -84,60 +84,6 @@ type Index struct {
 	splitCost float64
 }
 
-func NewIndex() *Index {
-	index := &Index{
-		superRootNode: nil,
-		rootNode:      nil,
-
-		traversalNode:         nil,
-		traversalNodeBucketID: -1,
-
-		expectedInsertFrac:          1.0,
-		maxNodeSize:                 1 << 24,
-		approximateModelComputation: true,
-		approximateCostComputation:  false,
-
-		maxFanout:        1 << 21,
-		maxDataNodeSlots: (1 << 24) / shared.BlockSize,
-
-		numKeys:                       0,
-		numModelNodes:                 0,
-		numDataNodes:                  0,
-		numExpandAndScales:            0,
-		numExpandAndRetrains:          0,
-		numDownwardSplits:             0,
-		numSidewaysSplits:             0,
-		numModelNodeExpansions:        0,
-		numModelNodeSplits:            0,
-		numDownwardSplitKeys:          0,
-		numSidewaysSplitKeys:          0,
-		numModelNodeExpansionPointers: 0,
-		numModelNodeSplitPointers:     0,
-		numNodeLookups:                0,
-		numLookups:                    0,
-		numInserts:                    0,
-		numResizes:                    0,
-		splittingTime:                 0.0,
-		costComputationTime:           0.0,
-
-		keyDomainMax:                   shared.MinKey,
-		keyDomainMin:                   shared.MaxKey,
-		numKeysAboveKeyDomain:          0,
-		numKeysBelowKeyDomain:          0,
-		numKeysAtLastLeftDomainResize:  0,
-		numKeysAtLastRightDomainResize: 0,
-
-		stopCost:  0,
-		splitCost: 0,
-	}
-	emptyDataNode := node.NewDataNode(1)
-	index.rootNode = emptyDataNode
-	index.numDataNodes++
-	index.createSuperRoot()
-
-	return index
-}
-
 func (self *Index) createSuperRoot() {
 	if self.rootNode == nil {
 		return
@@ -923,7 +869,7 @@ func (self *Index) splitSideways(
 // not.
 // Insert does not happen if duplicates are not allowed and duplicate is
 // found.
-func (self *Index) Insert(key shared.KeyType, value shared.PayloadType) error {
+func (self *Index) Insert(key shared.KeyType, payload shared.PayloadType) error {
 	if key > self.keyDomainMax {
 		self.numKeysAboveKeyDomain++
 		if self.shouldExpandRight() {
@@ -937,7 +883,7 @@ func (self *Index) Insert(key shared.KeyType, value shared.PayloadType) error {
 	}
 
 	leaf, _ := self.GetLeaf(key, false)
-	_, err := leaf.Insert(key, value)
+	_, err := leaf.Insert(key, payload)
 
 	if errors.Is(err, shared.NoInsertionError) {
 		return err
@@ -1016,16 +962,82 @@ func (self *Index) Insert(key shared.KeyType, value shared.PayloadType) error {
 			}
 
 			// Try again to insert the key
-			_, err = leaf.Insert(key, value)
+			_, err = leaf.Insert(key, payload)
 			if errors.Is(err, shared.NoInsertionError) {
 				return err
 			}
 		}
-
-		self.numInserts++
-		self.numKeys++
 		return nil
 	}
 
+	self.numInserts++
+	self.numKeys++
 	return nil
+}
+
+// Looks for an exact match of the key
+func (self *Index) Find(key shared.KeyType) (*shared.PayloadType, error) {
+	self.numLookups++
+	leaf, _ := self.GetLeaf(key, false)
+	idx, err := leaf.FindKeyPosition(key)
+	if idx < 0 {
+		return nil, err
+	}
+	return &leaf.Payloads[idx], nil
+}
+
+func NewIndex() *Index {
+	index := &Index{
+		superRootNode: nil,
+		rootNode:      nil,
+
+		traversalNode:         nil,
+		traversalNodeBucketID: -1,
+
+		expectedInsertFrac:          1.0,
+		maxNodeSize:                 1 << 24,
+		approximateModelComputation: true,
+		approximateCostComputation:  false,
+
+		maxFanout:        1 << 21,
+		maxDataNodeSlots: (1 << 24) / shared.BlockSize,
+
+		numKeys:                       0,
+		numModelNodes:                 0,
+		numDataNodes:                  0,
+		numExpandAndScales:            0,
+		numExpandAndRetrains:          0,
+		numDownwardSplits:             0,
+		numSidewaysSplits:             0,
+		numModelNodeExpansions:        0,
+		numModelNodeSplits:            0,
+		numDownwardSplitKeys:          0,
+		numSidewaysSplitKeys:          0,
+		numModelNodeExpansionPointers: 0,
+		numModelNodeSplitPointers:     0,
+		numNodeLookups:                0,
+		numLookups:                    0,
+		numInserts:                    0,
+		numResizes:                    0,
+		splittingTime:                 0.0,
+		costComputationTime:           0.0,
+
+		keyDomainMax:                   shared.MinKey,
+		keyDomainMin:                   shared.MaxKey,
+		numKeysAboveKeyDomain:          0,
+		numKeysBelowKeyDomain:          0,
+		numKeysAtLastLeftDomainResize:  0,
+		numKeysAtLastRightDomainResize: 0,
+
+		stopCost:  0,
+		splitCost: 0,
+	}
+	emptyDataNode := node.NewDataNode(1)
+	emptyDataNode.BulkLoad(make([]shared.PayloadType, 0), 0, nil, false)
+
+	index.rootNode = emptyDataNode
+	index.numDataNodes++
+	index.createSuperRoot()
+
+	return index
 }

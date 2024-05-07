@@ -12,14 +12,13 @@ type ExpectedSearchIterationsAndShiftsAccumulator struct {
 }
 
 func (e *ExpectedSearchIterationsAndShiftsAccumulator) Accumulate(actualPosition int, expectedPosition int, logError float64) {
-	e.cumulativeLogError += math.Log2(math.Abs(float64(expectedPosition-actualPosition) + 1))
-	if actualPosition > e.lastPosition {
-		e.numExpectedShifts++
+	e.cumulativeLogError += math.Log2(math.Abs(float64(expectedPosition-actualPosition)) + 1)
+	if actualPosition > e.lastPosition+1 {
 		denseRegionLength := e.lastPosition - e.denseRegionStartIndex + 1
-		e.numExpectedShifts += (denseRegionLength * denseRegionLength) / 4
+		e.numExpectedShifts += (denseRegionLength * denseRegionLength) / 2
 		e.denseRegionStartIndex = actualPosition
 	}
-	e.lastPosition = actualPosition + 1
+	e.lastPosition = actualPosition
 	e.count++
 }
 
@@ -29,7 +28,7 @@ func (e *ExpectedSearchIterationsAndShiftsAccumulator) GetStats() float64 {
 
 func (e *ExpectedSearchIterationsAndShiftsAccumulator) Reset() {
 	e.cumulativeLogError = 0.0
-	e.lastPosition = 0
+	e.lastPosition = -1
 	e.denseRegionStartIndex = 0
 	e.numExpectedShifts = 0
 	e.count = 0
@@ -54,7 +53,7 @@ func (e *ExpectedSearchIterationsAndShiftsAccumulator) GetExpectedNumShifts() fl
 func NewExpectedSearchIterationsAndShiftsAccumulator(dataCapacity int) *ExpectedSearchIterationsAndShiftsAccumulator {
 	return &ExpectedSearchIterationsAndShiftsAccumulator{
 		cumulativeLogError:    0.0,
-		lastPosition:          0,
+		lastPosition:          -1,
 		denseRegionStartIndex: 0,
 		numExpectedShifts:     0,
 		count:                 0,

@@ -2,7 +2,6 @@ package linear_model
 
 import (
 	"alex_go/shared"
-	"fmt"
 	"math"
 )
 
@@ -45,8 +44,6 @@ func (self *LinearModelBuilder) Add(x float64, y float64) {
 	self.xMax = max(x, self.xMax)
 	self.yMin = min(y, self.yMin)
 	self.yMax = max(y, self.yMax)
-
-	fmt.Println("count: ", self.count, " xSum: ", self.xSum, " ySum: ", self.ySum, " xxSum: ", self.xxSum, " xySum: ", self.xySum, " xMin: ", self.xMin, " xMax: ", self.xMax, " yMin: ", self.yMin, " yMax: ", self.yMax)
 }
 
 func (self *LinearModelBuilder) Build() {
