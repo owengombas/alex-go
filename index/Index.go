@@ -120,8 +120,8 @@ func NewIndex() *Index {
 		splittingTime:                 0.0,
 		costComputationTime:           0.0,
 
-		keyDomainMax:                   shared.MaxKey,
-		keyDomainMin:                   shared.MinKey,
+		keyDomainMax:                   shared.MinKey,
+		keyDomainMin:                   shared.MaxKey,
 		numKeysAboveKeyDomain:          0,
 		numKeysBelowKeyDomain:          0,
 		numKeysAtLastLeftDomainResize:  0,
@@ -180,28 +180,30 @@ func (self *Index) GetMaxKey() shared.KeyType {
 	return self.LastDataNode().GetLastKey()
 }
 
-func (self *Index) correctTraversalPath(leaf *node.DataNode, traversalPath []struct {
+// Make a correction to the traversal path to instead point to the leaf node
+// that is to the left or right of the current leaf node.
+func (self *Index) correctTraversalPath(leaf *node.DataNode, traversalPath *[]struct {
 	*node.ModelNode
 	int
 }, left bool) {
 	if left {
 		repeats := 1 << leaf.GetDuplicationFactor()
-		tn := traversalPath[len(traversalPath)-1]
+		tn := (*traversalPath)[len(*traversalPath)-1]
 		startBucketID := tn.int - (tn.int % repeats)
 		if startBucketID == 0 {
 			for startBucketID == 0 {
-				traversalPath = traversalPath[:len(traversalPath)-1] // Pop the last element
+				*traversalPath = (*traversalPath)[:len(*traversalPath)-1] // Pop the last element
 				repeats = 1 << tn.ModelNode.GetDuplicationFactor()
-				tn = traversalPath[len(traversalPath)-1]
+				tn = (*traversalPath)[len(*traversalPath)-1]
 				startBucketID = tn.int - (tn.int % repeats)
 			}
 			correctBucketID := startBucketID - 1
 			tn.int = correctBucketID
 
 			currentNode := &tn.ModelNode.Children[correctBucketID]
-			for (*currentNode).IsLeaf() {
+			for !(*currentNode).IsLeaf() {
 				currentModelNode, _ := (*currentNode).(*node.ModelNode)
-				traversalPath = append(traversalPath, struct {
+				*traversalPath = append(*traversalPath, struct {
 					*node.ModelNode
 					int
 				}{currentModelNode, currentModelNode.NumChildren - 1})
@@ -216,22 +218,22 @@ func (self *Index) correctTraversalPath(leaf *node.DataNode, traversalPath []str
 		}
 	} else {
 		repeats := 1 << leaf.GetDuplicationFactor()
-		tn := traversalPath[len(traversalPath)-1]
-		endBucketID := tn.int - (tn.int % repeats)
+		tn := (*traversalPath)[len(*traversalPath)-1]
+		endBucketID := tn.int - (tn.int % repeats) + repeats
 		if endBucketID == tn.ModelNode.NumChildren {
-			for endBucketID == tn.ModelNode.NumChildren-1 {
-				traversalPath = traversalPath[:len(traversalPath)-1] // Pop the last element
+			for endBucketID == tn.ModelNode.NumChildren {
+				*traversalPath = (*traversalPath)[:len(*traversalPath)-1] // Pop the last element
 				repeats = 1 << tn.ModelNode.GetDuplicationFactor()
-				tn = traversalPath[len(traversalPath)-1]
+				tn = (*traversalPath)[len(*traversalPath)-1]
 				endBucketID = tn.int - (tn.int % repeats) + repeats
 			}
 			correctBucketID := endBucketID
 			tn.int = correctBucketID
 
 			currentNode := &tn.ModelNode.Children[correctBucketID]
-			for (*currentNode).IsLeaf() {
+			for !(*currentNode).IsLeaf() {
 				currentModelNode, _ := (*currentNode).(*node.ModelNode)
-				traversalPath = append(traversalPath, struct {
+				*traversalPath = append(*traversalPath, struct {
 					*node.ModelNode
 					int
 				}{currentModelNode, 0})
@@ -268,63 +270,63 @@ func (self *Index) GetLeaf(key shared.KeyType, buildTraversalPath bool) (*node.D
 		return self.rootNode.(*node.DataNode), traversalPath
 	}
 
-	var bucketIDPrediction float64
 	for {
-		switch currentNodeTyped := currentNode.(type) {
-		case *node.ModelNode:
-			bucketIDPrediction = currentNode.GetLinearModel().PredictDouble(float64(key))
-			bucketID := min(max(int(bucketIDPrediction), 0), currentNodeTyped.NumChildren-1)
-			if buildTraversalPath {
-				traversalPath = append(traversalPath, struct {
-					*node.ModelNode
-					int
-				}{currentNodeTyped, bucketID})
-			}
+		currentModelNode := currentNode.(*node.ModelNode)
+		bucketIDPrediction := currentNode.GetLinearModel().PredictDouble(float64(key))
+		bucketID := min(max(int(bucketIDPrediction), 0), currentModelNode.NumChildren-1)
+		if buildTraversalPath {
+			traversalPath = append(traversalPath, struct {
+				*node.ModelNode
+				int
+			}{currentModelNode, bucketID})
+		}
 
-			currentNode = currentNodeTyped.Children[bucketID]
-		case *node.DataNode:
-			self.numNodeLookups += int64(currentNodeTyped.GetLevel())
+		currentNode = currentModelNode.Children[bucketID]
+
+		if currentNode.IsLeaf() {
+			currentDataNode := currentNode.(*node.DataNode)
+			self.numNodeLookups += int64(currentDataNode.GetLevel())
 			bucketIDPredictionRounded := float64(int(bucketIDPrediction + 0.5))
 			epsilon := math.Nextafter(1.0, 2.0) - 1.0 // https://stackoverflow.com/questions/22185636/easiest-way-to-get-the-machine-epsilon-in-go
 			tolerance := 10 * epsilon * bucketIDPrediction
 			if math.Abs(bucketIDPrediction-bucketIDPredictionRounded) <= tolerance {
 				if bucketIDPredictionRounded <= bucketIDPrediction {
-					if prevLeaf := currentNodeTyped.PrevLeaf; prevLeaf != nil {
-						if prevLeaf.GetFirstKey() >= key {
+					if prevLeaf := currentDataNode.PrevLeaf; prevLeaf != nil {
+						if prevLeaf.GetLastKey() >= key {
 							if buildTraversalPath {
-								self.correctTraversalPath(currentNodeTyped, traversalPath, true)
+								self.correctTraversalPath(currentDataNode, &traversalPath, true)
 							}
 							return prevLeaf, traversalPath
 						}
 					}
 				} else {
-					if nextLeaf := currentNodeTyped.NextLeaf; nextLeaf != nil {
+					if nextLeaf := currentDataNode.NextLeaf; nextLeaf != nil {
 						if nextLeaf.GetFirstKey() <= key {
 							if buildTraversalPath {
-								self.correctTraversalPath(currentNodeTyped, traversalPath, false)
+								self.correctTraversalPath(currentDataNode, &traversalPath, false)
 							}
 							return nextLeaf, traversalPath
 						}
 					}
 				}
 			}
-			return currentNodeTyped, traversalPath
+			return currentDataNode, traversalPath
 		}
 	}
 }
 
 func (self *Index) shouldExpandRight() bool {
-	return self.rootNode.IsLeaf() &&
-		self.numKeysAboveKeyDomain >= shared.KMinOutOfDomainKeys &&
-		self.numKeysAboveKeyDomain >= shared.KOutOfDomainToleranceFactor*(self.numKeys/self.numKeysAtLastRightDomainResize-1) ||
-		self.numKeysAboveKeyDomain >= shared.KMaxOutOfDomainKeys
+	return !self.rootNode.IsLeaf() &&
+		((self.numKeysAboveKeyDomain >= shared.KMinOutOfDomainKeys &&
+			self.numKeysAboveKeyDomain >= shared.KOutOfDomainToleranceFactor*(self.numKeys/self.numKeysAtLastRightDomainResize-1)) ||
+			self.numKeysAboveKeyDomain >= shared.KMaxOutOfDomainKeys)
 }
 
 func (self *Index) shouldExpandLeft() bool {
-	return self.rootNode.IsLeaf() &&
-		self.numKeysBelowKeyDomain >= shared.KMinOutOfDomainKeys &&
-		self.numKeysBelowKeyDomain >= shared.KOutOfDomainToleranceFactor*(self.numKeys/self.numKeysAtLastLeftDomainResize-1) ||
-		self.numKeysBelowKeyDomain >= shared.KMaxOutOfDomainKeys
+	return !self.rootNode.IsLeaf() &&
+		((self.numKeysBelowKeyDomain >= shared.KMinOutOfDomainKeys &&
+			self.numKeysBelowKeyDomain >= shared.KOutOfDomainToleranceFactor*(self.numKeys/self.numKeysAtLastLeftDomainResize-1)) ||
+			self.numKeysBelowKeyDomain >= shared.KMaxOutOfDomainKeys)
 }
 
 func (self *Index) updateSuperRootNodePointer() {
@@ -363,7 +365,7 @@ func (self *Index) bulkLoadLeafNodeFromExisting(
 		// Assumes the model is accurate
 		numActualKeys := existingNode.NumKeysInRange(left, right)
 		preComputedModel := linear_model.CopyLinearModel(existingNode.GetLinearModel())
-		preComputedModel.B -= -float64(left)
+		preComputedModel.B -= float64(left)
 		preComputedModel.Expand(float64(numActualKeys) / float64(right-left))
 		node.BulkLoadFromExisting(
 			existingNode,
@@ -410,7 +412,8 @@ func (self *Index) expandRoot(key shared.KeyType, expandLeft bool) {
 	domainSize := newDomainMax - newDomainMin
 	if expandLeft {
 		keyDifference := self.keyDomainMin - min(key, self.GetMinKey())
-		expansionFactor = shared.Pow2RoundUp(int(keyDifference+domainSize) - 1)
+		expansionFactor = shared.Pow2RoundUp((keyDifference+domainSize-1)/domainSize + 1)
+
 		halfExpandableDomain := self.keyDomainMax/2 - shared.MinKey/2
 		halfExpandableDomainSize := shared.KeyType(expansionFactor) / 2 * domainSize
 		if halfExpandableDomainSize < halfExpandableDomain {
@@ -424,7 +427,8 @@ func (self *Index) expandRoot(key shared.KeyType, expandLeft bool) {
 		outermostNode = self.FirstDataNode()
 	} else {
 		keyDifference := self.keyDomainMax - max(key, self.GetMaxKey())
-		expansionFactor = shared.Pow2RoundUp(int(keyDifference+domainSize) - 1)
+		expansionFactor = shared.Pow2RoundUp((keyDifference+domainSize-1)/domainSize + 1)
+
 		halfExpandableDomain := shared.MaxKey/2 - self.keyDomainMin/2
 		halfExpandableDomainSize := shared.KeyType(expansionFactor) / 2 * domainSize
 		if halfExpandableDomainSize < halfExpandableDomain {
@@ -503,7 +507,7 @@ func (self *Index) expandRoot(key shared.KeyType, expandLeft bool) {
 	if expandLeft {
 		inBoundsNewNodesStart = max(newNodesStart, self.rootNode.GetLinearModel().Predict(float64(newDomainMin)))
 	} else {
-		inBoundsNewNodesEnd = min(newNodesEnd, self.rootNode.GetLinearModel().Predict(float64(newDomainMax)))
+		inBoundsNewNodesEnd = min(newNodesEnd, self.rootNode.GetLinearModel().Predict(float64(newDomainMax))+1)
 	}
 
 	// Fill newly created child pointers of the root node with new data nodes.
@@ -512,7 +516,7 @@ func (self *Index) expandRoot(key shared.KeyType, expandLeft bool) {
 	// Requires reassigning some keys from the outermost pre-existing data node
 	// to the new data nodes.
 	n := root.NumChildren - (newNodesEnd - newNodesStart)
-	if root.NumChildren%n == 0 {
+	if root.NumChildren%n != 0 {
 		panic("Root node's number of children must be a multiple of n")
 	}
 	newNodeDuplicationFactor := shared.Log2RoundDown(n)
@@ -818,7 +822,7 @@ func (self *Index) splitDownwards(
 
 	if parentNode.ModelNode.LinearModel.A == 0 {
 		newNode.LinearModel.A = 0
-		newNode.LinearModel.B = -1.0 * (float64(startBucketID) - parentNode.ModelNode.LinearModel.B) / float64(repeats)
+		newNode.LinearModel.B = -(float64(startBucketID) - parentNode.ModelNode.LinearModel.B) / float64(repeats)
 	} else {
 		leftBoundaryValue := (float64(startBucketID) - parentNode.ModelNode.LinearModel.B) / parentNode.ModelNode.LinearModel.A
 		rightBoundaryValue := (float64(endBucketID) - parentNode.ModelNode.LinearModel.B) / parentNode.ModelNode.LinearModel.A
@@ -832,12 +836,11 @@ func (self *Index) splitDownwards(
 		if fanoutTreeDepth != 1 {
 			panic("Fanout tree depth must be 1")
 		}
-		self.createNewDataNodes(
+		self.createTwoNewDataNodes(
 			leaf,
 			newNode,
 			fanoutTreeDepth,
-			usedFanoutTree,
-			0,
+			reuseModel,
 			0,
 		)
 	} else {
@@ -886,7 +889,7 @@ func (self *Index) splitSideways(
 		// enough redundant pointers
 		self.numModelNodeExpansions++
 		self.numModelNodeExpansionPointers += int64(parent.NumChildren)
-		expansionFactor := parent.Expand(fanoutTreeDepth - int(leaf.DuplicationFactor))
+		expansionFactor := parent.Expand(fanoutTreeDepth - leaf.DuplicationFactor)
 		repeats *= expansionFactor
 		bucketID *= expansionFactor
 	}
@@ -1009,11 +1012,11 @@ func (self *Index) Insert(key shared.KeyType, value shared.PayloadType) error {
 						)
 					}
 				}
-				leaf = parent.Children[bucketID].(*node.DataNode)
+				leaf = (*parent.ModelNode.GetChildNode(key)).(*node.DataNode)
 			}
 
 			// Try again to insert the key
-			_, err := leaf.Insert(key, value)
+			_, err = leaf.Insert(key, value)
 			if errors.Is(err, shared.NoInsertionError) {
 				return err
 			}

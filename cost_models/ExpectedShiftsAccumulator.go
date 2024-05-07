@@ -35,12 +35,12 @@ func (e *ExpectedShiftsAccumulator) Reset() {
 	e.count = 0
 }
 
-func NewExpectedShiftsAccumulator() *ExpectedShiftsAccumulator {
+func NewExpectedShiftsAccumulator(dataCapacity int) *ExpectedShiftsAccumulator {
 	return &ExpectedShiftsAccumulator{
 		lastPosition:          0,
 		denseRegionStartIndex: 0,
 		numExpectedShifts:     0,
 		count:                 0,
-		dataCapacity:          0,
+		dataCapacity:          dataCapacity,
 	}
 }

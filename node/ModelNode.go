@@ -28,6 +28,10 @@ func (self *ModelNode) GetChildNode(key shared.KeyType) *Node {
 }
 
 func (self *ModelNode) Expand(log2ExpansionFactor int) int {
+	if log2ExpansionFactor < 0 {
+		panic("Expansion factor must be non-negative")
+	}
+
 	expansionFactor := 1 << log2ExpansionFactor
 	numNewChildren := self.NumChildren * expansionFactor
 	newChildren := make([]Node, numNewChildren)
@@ -45,7 +49,7 @@ func (self *ModelNode) Expand(log2ExpansionFactor int) int {
 	self.Children = newChildren
 	self.NumChildren = numNewChildren
 	self.LinearModel.Expand(float64(expansionFactor))
-	return numNewChildren
+	return expansionFactor
 }
 
 func (self *ModelNode) IsLeaf() bool {
@@ -97,6 +101,6 @@ func NewModelNode(level int) *ModelNode {
 		Level:             level,
 		LinearModel:       linear_model.LinearModel{},
 		Cost:              0.0,
-		Children:          nil,
+		Children:          make([]Node, 1),
 	}
 }

@@ -51,13 +51,13 @@ func (e *ExpectedSearchIterationsAndShiftsAccumulator) GetExpectedNumShifts() fl
 	return float64(currentNumExpectedShifts) / float64(e.count)
 }
 
-func NewExpectedSearchIterationsAndShiftsAccumulator() *ExpectedSearchIterationsAndShiftsAccumulator {
+func NewExpectedSearchIterationsAndShiftsAccumulator(dataCapacity int) *ExpectedSearchIterationsAndShiftsAccumulator {
 	return &ExpectedSearchIterationsAndShiftsAccumulator{
 		cumulativeLogError:    0.0,
 		lastPosition:          0,
 		denseRegionStartIndex: 0,
 		numExpectedShifts:     0,
 		count:                 0,
-		dataCapacity:          0,
+		dataCapacity:          dataCapacity,
 	}
 }

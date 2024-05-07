@@ -2,6 +2,7 @@ package linear_model
 
 import (
 	"alex_go/shared"
+	"fmt"
 	"math"
 )
 
@@ -33,44 +34,48 @@ func NewLinearModelBuilder(model *LinearModel) *LinearModelBuilder {
 	}
 }
 
-func (b *LinearModelBuilder) Add(x, y float64) {
-	b.count++
-	b.xSum += x
-	b.ySum += y
-	b.xxSum += x * x
-	b.xySum += x * y
+func (self *LinearModelBuilder) Add(x float64, y float64) {
+	self.count++
+	self.xSum += x
+	self.ySum += y
+	self.xxSum += x * x
+	self.xySum += x * y
 
-	b.xMin = min(x, b.xMin)
-	b.xMax = max(x, b.xMax)
-	b.yMin = min(y, b.yMin)
-	b.yMax = max(y, b.yMax)
+	self.xMin = min(x, self.xMin)
+	self.xMax = max(x, self.xMax)
+	self.yMin = min(y, self.yMin)
+	self.yMax = max(y, self.yMax)
+
+	fmt.Println("count: ", self.count, " xSum: ", self.xSum, " ySum: ", self.ySum, " xxSum: ", self.xxSum, " xySum: ", self.xySum, " xMin: ", self.xMin, " xMax: ", self.xMax, " yMin: ", self.yMin, " yMax: ", self.yMax)
 }
 
-func (b *LinearModelBuilder) Build() {
-	if b.count <= 1 {
-		b.model.A = 0.0
-		b.model.B = b.ySum
+func (self *LinearModelBuilder) Build() {
+	if self.count <= 1 {
+		self.model.A = 0.0
+		self.model.B = self.ySum
 		return
 	}
 
-	if float64(b.count)*b.xxSum-b.xSum*b.xSum == 0.0 {
-		b.model.A = 0.0
-		b.model.B = b.ySum / float64(b.count)
+	if float64(self.count)*self.xxSum-self.xSum*self.xSum == 0.0 {
+		self.model.A = 0.0
+		self.model.B = self.ySum / float64(self.count)
 		return
 	}
 
-	slope := (float64(b.count)*b.xySum - b.xSum*b.ySum) / (float64(b.count)*b.xxSum - b.xSum*b.xSum)
-	intercept := (b.ySum - slope*b.xSum) / float64(b.count)
-	b.model.A = slope
-	b.model.B = intercept
+	slope := (float64(self.count)*self.xySum - self.xSum*self.ySum) /
+		(float64(self.count)*self.xxSum - self.xSum*self.xSum)
+	intercept := (self.ySum - slope*self.xSum) / float64(self.count)
+	self.model.A = slope
+	self.model.B = intercept
 
-	if b.model.A <= 0.0 {
-		if b.xMax-b.xMin == 0.0 {
-			b.model.A = 0.0
-			b.model.B = b.ySum / float64(b.count)
+	// If floating point precision errors, fit spline
+	if self.model.A <= 0.0 {
+		if self.xMax-self.xMin == 0.0 {
+			self.model.A = 0.0
+			self.model.B = self.ySum / float64(self.count)
 		} else {
-			b.model.A = (b.yMax - b.yMin) / (b.xMax - b.xMin)
-			b.model.B = -b.xMin * b.model.A
+			self.model.A = (self.yMax - self.yMin) / (self.xMax - self.xMin)
+			self.model.B = -self.xMin * self.model.A
 		}
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"alex_go/cost_models"
 	"alex_go/linear_model"
 	"alex_go/shared"
+	"fmt"
 	"unsafe"
 )
 
@@ -133,10 +134,10 @@ func (self *DataNode) BinarySearchUpperBound(l int, r int, key shared.KeyType) i
 func (self *DataNode) BinarySearchLowerBound(l int, r int, key shared.KeyType) int {
 	for l < r {
 		m := l + (r-l)/2
-		if self.Keys[m] < key {
-			l = m + 1
-		} else {
+		if self.Keys[m] >= key {
 			r = m
+		} else {
+			l = m + 1
 		}
 	}
 	return l
@@ -146,8 +147,7 @@ func (self *DataNode) BinarySearchLowerBound(l int, r int, key shared.KeyType) i
 // Returns position in range [0, data_capacity]
 func (self *DataNode) ExponentialSearchUpperBound(m int, key shared.KeyType) int {
 	bound := 1
-	var l int
-	var r int
+	var l, r int
 	if self.Keys[m] > key {
 		size := m
 		for bound < size && self.Keys[m-bound] > key {
@@ -172,8 +172,7 @@ func (self *DataNode) ExponentialSearchUpperBound(m int, key shared.KeyType) int
 // Returns position in range [0, data_capacity]
 func (self *DataNode) ExponentialSearchLowerBound(m int, key shared.KeyType) int {
 	bound := 1
-	var l int
-	var r int
+	var l, r int
 	if self.Keys[m] >= key {
 		size := m
 		for bound < size && self.Keys[m-bound] >= key {
@@ -252,6 +251,13 @@ func (self *DataNode) InsertElementAt(key shared.KeyType, payload shared.Payload
 	self.Keys[pos] = key
 	self.Payloads[pos] = payload
 	self.Bitmap[pos] = true
+
+	// Overwrite preceding gaps until we reach the previous element
+	pos--
+	for pos >= 0 && !self.Bitmap[pos] {
+		self.Keys[pos] = key
+		pos--
+	}
 }
 
 // Returns position of closest gap to pos. Returns pos if pos is a gap
@@ -284,7 +290,7 @@ func (self *DataNode) ClosestGap(pos int) (int, error) {
 			}
 		}
 	}
-	return 0, shared.NoGapFoundError
+	return -1, shared.NoGapFoundError
 }
 
 // Predicts the position of a key using the model
@@ -334,7 +340,7 @@ func (self *DataNode) InsertUsingShifts(key shared.KeyType, payload shared.Paylo
 			self.Payloads[i] = self.Payloads[i+1]
 		}
 		self.InsertElementAt(key, payload, pos-1)
-		self.NumShifts += int64(pos - gapPos)
+		self.NumShifts += int64(pos - gapPos - 1)
 		return pos - 1
 	}
 }
@@ -358,6 +364,7 @@ func (self *DataNode) GetNextFilledPosition(pos int, exclusive bool) int {
 	return pos
 }
 
+// ShiftsPerInserts Empirical average number of shifts per insert
 func (self *DataNode) ShiftsPerInserts() float64 {
 	if self.NumInserts == 0 {
 		return 0.0
@@ -365,33 +372,39 @@ func (self *DataNode) ShiftsPerInserts() float64 {
 	return float64(self.NumShifts) / float64(self.NumInserts)
 }
 
-// Returns true if Cost is catastrophically high and we want to force a split
+// CatastrophicCost Returns true if Cost is catastrophically high and we want to force a split
 // The heuristic for this is if the number of shifts per insert (expected or
 // empirical) is over 100
 func (self *DataNode) CatastrophicCost() bool {
-	return self.LinearModel.A == 0.0 && self.ShiftsPerInserts() > 100 || self.ExpectedAvgShifts > 100
+	return self.LinearModel.A != 0.0 && self.ShiftsPerInserts() > 100 || self.ExpectedAvgShifts > 100
 }
 
+// ExpSearchIterationsPerOperation Empirical average number of exponential search iterations per operation
+// (either lookup or insert)
 func (self *DataNode) ExpSearchIterationsPerOperation() float64 {
-	if self.NumInserts+self.NumLookups == 0 {
+	numOps := self.NumInserts + self.NumLookups
+	if numOps == 0 {
 		return 0.0
 	}
-	return float64(self.NumExpSearchIterations) / float64(self.NumInserts+self.NumLookups)
+	return float64(self.NumExpSearchIterations) / float64(numOps)
 }
 
 func (self *DataNode) FracInserts() float64 {
-	if self.NumInserts+self.NumLookups == 0 {
+	numOps := self.NumInserts + self.NumLookups
+	if numOps == 0 {
 		return 0.0
 	}
-	return float64(self.NumInserts) / float64(self.NumInserts+self.NumLookups)
+	return float64(self.NumInserts) / float64(numOps)
 }
 
 func (self *DataNode) EmpiricalCost() float64 {
-	if self.NumInserts+self.NumLookups == 0 {
+	numOps := self.NumInserts + self.NumLookups
+	if numOps == 0 {
 		return 0.0
 	}
+	fracInserts := float64(self.NumInserts) / float64(numOps)
 	return shared.KExpSearchIterationsWeight*self.ExpSearchIterationsPerOperation() +
-		shared.KShiftsWeight*self.ShiftsPerInserts()*self.FracInserts()
+		shared.KShiftsWeight*self.ShiftsPerInserts()*fracInserts
 }
 
 // SignificantCostDeviation Whether empirical Cost deviates significantly from expected Cost
@@ -408,9 +421,9 @@ func (self *DataNode) ComputeExpectedCost(fracInserts float64) float64 {
 	}
 
 	searchIterationsAccumaulator := cost_models.NewExpectedSearchIterationsAccumulator()
-	shiftsAccumulator := cost_models.NewExpectedShiftsAccumulator()
-	self.IterateFilledPositions(func(key shared.KeyType, payload shared.PayloadType, i int) {
-		predictedPosition := max(min(self.DataCapacity-1, self.LinearModel.Predict(float64(key))), 0)
+	shiftsAccumulator := cost_models.NewExpectedShiftsAccumulator(self.DataCapacity)
+	self.IterateFilledPositions(func(key shared.KeyType, payload shared.PayloadType, i int, j int) {
+		predictedPosition := max(0, min(self.DataCapacity-1, self.LinearModel.Predict(float64(key))))
 		searchIterationsAccumaulator.Accumulate(i, predictedPosition, 0.0)
 		shiftsAccumulator.Accumulate(i, predictedPosition, 0.0)
 	}, 0, self.DataCapacity)
@@ -435,25 +448,25 @@ func (self *DataNode) EraseRange(startKey shared.KeyType, endKey shared.KeyType,
 
 	numErased := 0
 	var nextKey shared.KeyType
-	if pos < self.DataCapacity {
-		nextKey = self.Keys[pos]
+	if pos == self.DataCapacity {
+		nextKey = shared.KEndSentinel
 	} else {
 		nextKey = self.Keys[pos]
 	}
 	pos--
 
 	for pos >= 0 && self.Keys[pos] >= startKey {
+		self.Keys[pos] = nextKey
+		self.Bitmap[pos] = false
 		if self.Bitmap[pos] {
-			self.Bitmap[pos] = false
 			numErased++
-			self.Keys[pos] = nextKey
 		}
 		pos--
 	}
 
 	self.NumKeys -= numErased
 
-	if self.NumKeys < int(self.ContractionThreshold) {
+	if float64(self.NumKeys) < self.ContractionThreshold {
 		self.Resize(shared.KMinDensity, false, false, false)
 		self.NumResizes++
 	}
@@ -467,14 +480,14 @@ func (self *DataNode) Insert(key shared.KeyType, payload shared.PayloadType) (in
 		return 0, shared.CatastrophicCostInsertionError
 	}
 
-	if self.NumKeys >= int(self.ExpansionThreshold) {
+	if float64(self.NumKeys) >= self.ExpansionThreshold {
 		if self.SignificantCostDeviation() {
 			return 0, shared.SignificantCostDeviationInsertionError
 		}
 		if self.CatastrophicCost() {
 			return 0, shared.CatastrophicCostInsertionError
 		}
-		if self.NumKeys > int(float64(self.MaxSlots)*shared.KMinDensity) {
+		if float64(self.NumKeys) > float64(self.MaxSlots)*shared.KMinDensity {
 			return 0, shared.MaxCapacityInsertionError
 		}
 		keepLeft := self.IsAppendMostlyRight()
@@ -514,33 +527,35 @@ func (self *DataNode) Resize(targetDensity float64, forceRetrain bool, keepLeft 
 	newPayloadSlots := make([]shared.PayloadType, newDataCapacity)
 	newBitmap := make([]bool, newDataCapacity)
 
-	if self.NumInserts < shared.NumKeysDataNodeRetrainThreshold || forceRetrain {
+	if self.NumKeys < shared.NumKeysDataNodeRetrainThreshold || forceRetrain {
 		linearModelBuilder := linear_model.NewLinearModelBuilder(&self.LinearModel)
-		self.IterateFilledPositions(func(key shared.KeyType, payload shared.PayloadType, i int) {
-			linearModelBuilder.Add(float64(key), float64(i))
+		self.IterateFilledPositions(func(key shared.KeyType, payload shared.PayloadType, i int, j int) {
+			fmt.Println("--->", key, payload, i, j)
+			linearModelBuilder.Add(float64(key), float64(j))
 		}, 0, self.DataCapacity)
 		linearModelBuilder.Build()
+		fmt.Println("a: ", self.LinearModel.A, "b: ", self.LinearModel.B)
 
 		if keepLeft {
-			self.LinearModel.Expand(float64(self.DataCapacity / self.NumKeys))
+			self.LinearModel.Expand(float64(self.DataCapacity) / float64(self.NumKeys))
 		} else if keepRight {
-			self.LinearModel.Expand(float64(self.DataCapacity / self.NumKeys))
+			self.LinearModel.Expand(float64(self.DataCapacity) / float64(self.NumKeys))
 			self.LinearModel.B += float64(newDataCapacity - self.DataCapacity)
 		} else {
-			self.LinearModel.Expand(float64(newDataCapacity / self.NumKeys))
+			self.LinearModel.Expand(float64(newDataCapacity) / float64(self.NumKeys))
 		}
 	} else {
 		if keepRight {
 			self.LinearModel.B += float64(newDataCapacity - self.DataCapacity)
 		} else if !keepLeft {
-			self.LinearModel.Expand(float64(newDataCapacity / self.DataCapacity))
+			self.LinearModel.Expand(float64(newDataCapacity) / float64(self.DataCapacity))
 		}
 	}
 
 	lastPosition := -1
 	keysRemaining := self.NumKeys
 	i := self.GetNextFilledPosition(0, false)
-	for i < len(self.Keys) {
+	for i < self.DataCapacity {
 		position := self.LinearModel.Predict(float64(self.Keys[i]))
 		position = max(position, lastPosition+1)
 
@@ -553,12 +568,13 @@ func (self *DataNode) Resize(targetDensity float64, forceRetrain bool, keepLeft 
 				newKeySlots[j] = self.Keys[i]
 			}
 
-			for ; pos < newDataCapacity; pos++ {
+			for pos < newDataCapacity {
 				newKeySlots[pos] = self.Keys[i]
 				newPayloadSlots[pos] = self.Payloads[i]
 				newBitmap[pos] = true
 
 				i = self.GetNextFilledPosition(i+1, false)
+				pos++
 			}
 
 			lastPosition = position - 1
@@ -591,12 +607,14 @@ func (self *DataNode) Resize(targetDensity float64, forceRetrain bool, keepLeft 
 	self.ContractionThreshold = float64(self.DataCapacity) * shared.KMinDensity
 }
 
-func (self *DataNode) IterateFilledPositions(yield func(shared.KeyType, shared.PayloadType, int), start int, end int) {
+func (self *DataNode) IterateFilledPositions(yield func(shared.KeyType, shared.PayloadType, int, int), start int, end int) {
+	j := 0
 	for i := max(start, 0); i < min(self.DataCapacity, end); i++ {
 		if self.Bitmap[i] {
 			key := self.Keys[i]
 			payload := self.Payloads[i]
-			yield(key, payload, i)
+			yield(key, payload, i, j)
+			j++
 		}
 	}
 }
@@ -645,10 +663,11 @@ func (self *DataNode) IsLeaf() bool {
 }
 
 func (self *DataNode) Initialize(numKeys int, density float64) {
-	newDataCapacity := int(max(float64(numKeys)/shared.KMinDensity, float64(numKeys)+1))
-	self.Keys = make([]shared.KeyType, newDataCapacity)
-	self.Payloads = make([]shared.PayloadType, newDataCapacity)
-	self.Bitmap = make([]bool, newDataCapacity)
+	self.NumKeys = numKeys
+	self.DataCapacity = int(max(float64(numKeys)/density, float64(numKeys)+1))
+	self.Keys = make([]shared.KeyType, self.DataCapacity)
+	self.Payloads = make([]shared.PayloadType, self.DataCapacity)
+	self.Bitmap = make([]bool, self.DataCapacity)
 }
 
 func (self *DataNode) BulkLoadFromExisting(
@@ -660,11 +679,15 @@ func (self *DataNode) BulkLoadFromExisting(
 	preComputedModel *linear_model.LinearModel,
 	preComputedActualKeys int,
 ) {
+	if !(left >= 0 && right <= node.DataCapacity) {
+		panic("left and right must be within the range of the node")
+	}
+
 	numActualKeys := 0
-	linearModelBuilder := linear_model.NewLinearModelBuilder(&node.LinearModel)
 	if preComputedModel == nil || preComputedActualKeys == -1 {
-		node.IterateFilledPositions(func(key shared.KeyType, payload shared.PayloadType, i int) {
-			linearModelBuilder.Add(float64(key), float64(i))
+		linearModelBuilder := linear_model.NewLinearModelBuilder(&node.LinearModel)
+		node.IterateFilledPositions(func(key shared.KeyType, payload shared.PayloadType, i int, j int) {
+			linearModelBuilder.Add(float64(key), float64(j))
 			numActualKeys++
 		}, left, right)
 		linearModelBuilder.Build()
@@ -681,6 +704,7 @@ func (self *DataNode) BulkLoadFromExisting(
 		for i := 0; i < self.DataCapacity; i++ {
 			self.Keys[i] = shared.KEndSentinel
 		}
+		return
 	}
 
 	if keepLeft {
@@ -695,9 +719,8 @@ func (self *DataNode) BulkLoadFromExisting(
 	// Model-based inserts
 	lastPosition := -1
 	keysRemaining := self.NumKeys
-	i := 0
-	keyPos := node.GetNextFilledPosition(i, true)
-	minKey := node.Keys[keyPos]
+	i := node.GetNextFilledPosition(left, false)
+	minKey := node.Keys[i]
 	for i < right {
 		position := self.LinearModel.Predict(float64(node.Keys[i]))
 		position = max(position, lastPosition+1)
@@ -733,6 +756,7 @@ func (self *DataNode) BulkLoadFromExisting(
 
 		lastPosition = position
 		keysRemaining--
+		i = node.GetNextFilledPosition(i+1, false)
 	}
 
 	for i = lastPosition + 1; i < self.DataCapacity; i++ {
@@ -763,8 +787,8 @@ func NewDataNode(dataCapacity int) *DataNode {
 		NumLookups:                     0,
 		NumInserts:                     0,
 		NumResizes:                     0,
-		MaxKey:                         shared.KeyType(0),
-		MinKey:                         shared.KeyType(0),
+		MaxKey:                         shared.MinKey,
+		MinKey:                         shared.MaxKey,
 		NumRightOutOfBoundsInserts:     0,
 		NumLeftOutOfBoundsInserts:      0,
 		ExpectedAvgExpSearchIterations: 0.0,
@@ -772,4 +796,89 @@ func NewDataNode(dataCapacity int) *DataNode {
 		CurrentIteratorPosition:        0,
 		MaxSlots:                       shared.MaxSlots,
 	}
+}
+
+func BuildNodeImplicitFromExisting(
+	node *DataNode,
+	left int,
+	right int,
+	numActualKeys int,
+	dataCapacity int,
+	acc cost_models.Accumulator,
+	linearModel *linear_model.LinearModel,
+) {
+	lastPosition := -1
+	keysRemaining := numActualKeys
+	i := node.GetNextFilledPosition(left, false)
+	for i < right {
+		predictedPosition := max(min(dataCapacity-1, linearModel.Predict(float64(node.Keys[i])), 0))
+		actualPosition := max(predictedPosition, lastPosition+1)
+		positionRemaining := dataCapacity - actualPosition
+		if positionRemaining < keysRemaining {
+			actualPosition = dataCapacity - keysRemaining
+			for actualPosition < dataCapacity {
+				predictedPosition = max(0, min(dataCapacity-1, linearModel.Predict(float64(node.Keys[i]))))
+				acc.Accumulate(actualPosition, predictedPosition, 0.0)
+				actualPosition++
+				i = node.GetNextFilledPosition(i+1, false)
+			}
+			break
+		}
+		acc.Accumulate(actualPosition, predictedPosition, 0.0)
+		lastPosition = actualPosition
+		keysRemaining--
+		i = node.GetNextFilledPosition(i+1, false)
+	}
+}
+
+func ComputeExpectedCostFromExisting(
+	node *DataNode,
+	left int,
+	right int,
+	density float64,
+	expectedInsertFrac float64,
+	existingModel *linear_model.LinearModel,
+) (float64, float64, float64) {
+	if !(left >= 0 && right <= node.DataCapacity) {
+		panic("Invalid range")
+	}
+
+	linearModel := linear_model.NewLinearModel(0, 0)
+	numActualKeys := 0
+	if existingModel != nil {
+		builder := linear_model.NewLinearModelBuilder(linearModel)
+		node.IterateFilledPositions(func(key shared.KeyType, payload shared.PayloadType, i int, j int) {
+			builder.Add(float64(key), float64(j))
+			numActualKeys++
+		}, left, right)
+		builder.Build()
+	} else {
+		numActualKeys = node.NumKeysInRange(left, right)
+		linearModel.A = existingModel.A
+		linearModel.B = existingModel.B
+	}
+
+	if numActualKeys == 0 {
+		return 0, -1, -1
+	}
+
+	dataCapacity := max(int(float64(numActualKeys)/density), numActualKeys+1)
+	linearModel.Expand(float64(dataCapacity) / float64(numActualKeys))
+
+	cost := 0.0
+	expectedAvgExpSearchIterations := 0.0
+	expectedAvgShifts := 0.0
+	if expectedInsertFrac == 0 {
+		accumulator := cost_models.NewExpectedSearchIterationsAccumulator()
+		BuildNodeImplicitFromExisting(node, left, right, numActualKeys, dataCapacity, accumulator, linearModel)
+		expectedAvgExpSearchIterations = accumulator.GetStats()
+	} else {
+		accumulator := cost_models.NewExpectedSearchIterationsAndShiftsAccumulator(dataCapacity)
+		BuildNodeImplicitFromExisting(node, left, right, numActualKeys, dataCapacity, accumulator, linearModel)
+		expectedAvgExpSearchIterations = accumulator.GetExpectedNumSearchIterations()
+		expectedAvgShifts = accumulator.GetExpectedNumShifts()
+	}
+	cost = shared.KExpSearchIterationsWeight*float64(expectedAvgExpSearchIterations) + shared.KShiftsWeight*float64(expectedAvgShifts)*expectedInsertFrac
+
+	return cost, expectedAvgExpSearchIterations, expectedAvgShifts
 }

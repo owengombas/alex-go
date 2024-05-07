@@ -36,9 +36,7 @@ type FTNode struct {
 // collectUsedNodes filters and collects nodes from the fanout tree.
 func collectUsedNodes(fanoutTree [][]*FTNode, maxLevel int, usedFanoutTreeNodes *[]*FTNode) {
 	// Limit maxLevel to the smaller of maxLevel or the number of levels in fanoutTree.
-	if maxLevel >= len(fanoutTree) {
-		maxLevel = len(fanoutTree) - 1
-	}
+	maxLevel = min(maxLevel, len(fanoutTree)-1)
 
 	// Loop through each level up to maxLevel and collect used nodes.
 	for i := 0; i <= maxLevel; i++ {
@@ -51,7 +49,7 @@ func collectUsedNodes(fanoutTree [][]*FTNode, maxLevel int, usedFanoutTreeNodes 
 	}
 
 	// Sort the collected nodes based on the comparison criteria.
-	sort.Slice(*usedFanoutTreeNodes, func(i, j int) bool {
+	sort.Slice(*usedFanoutTreeNodes, func(i int, j int) bool {
 		left, right := (*usedFanoutTreeNodes)[i], (*usedFanoutTreeNodes)[j]
 		return (left.NodeID << (maxLevel - left.Level)) < (right.NodeID << (maxLevel - right.Level))
 	})
@@ -108,26 +106,26 @@ func FindBestFanoutExistingNode(
 	usedFanoutTreeNodes *[]*FTNode,
 	maxFanout int,
 ) int {
-	typeSize := float64(unsafe.Sizeof(node.NewDataNode(0)))
-	node := parent.Children[bucketID].(*node.DataNode)
-	numKeys := node.NumKeys
+	typeSize := float64(unsafe.Sizeof(*node.NewDataNode(0)))
+	currentNode := parent.Children[bucketID].(*node.DataNode)
+	numKeys := currentNode.NumKeys
 	bestLevel := 0
 	bestCost := math.MaxFloat64
 	fanoutCosts := make([]float64, 0)
 	fanoutTree := make([][]*FTNode, 0)
 
-	repeats := 1 << node.GetDuplicationFactor()
+	repeats := 1 << currentNode.GetDuplicationFactor()
 	startBucketID := bucketID - (bucketID % repeats)
 	endBucketID := startBucketID + repeats
 	baseModel := linear_model.NewLinearModel(0, 0)
 	if parent.GetLinearModel().A == 0 {
 		baseModel.A = 0
-		baseModel.B = -1.0*float64(startBucketID) - parent.GetLinearModel().B/float64(repeats)
+		baseModel.B = -(float64(startBucketID) - parent.GetLinearModel().B) / float64(repeats)
 	} else {
-		leftBoundaryValue := float64(startBucketID) - parent.GetLinearModel().B/parent.GetLinearModel().A
-		rightBoundaryValue := float64(endBucketID) - parent.GetLinearModel().B/parent.GetLinearModel().A
+		leftBoundaryValue := (float64(startBucketID) - parent.GetLinearModel().B) / parent.GetLinearModel().A
+		rightBoundaryValue := (float64(endBucketID) - parent.GetLinearModel().B) / parent.GetLinearModel().A
 		baseModel.A = 1.0 / (rightBoundaryValue - leftBoundaryValue)
-		baseModel.B = -1.0 * baseModel.A * leftBoundaryValue
+		baseModel.B = -baseModel.A * leftBoundaryValue
 	}
 
 	fanout, fanoutTreeLevel := 1, 0
@@ -135,15 +133,15 @@ func FindBestFanoutExistingNode(
 		newLevel := make([]*FTNode, 0)
 		cost := 0.0
 		a := baseModel.A * float64(fanout)
-		b := baseModel.A * float64(fanout)
+		b := baseModel.B * float64(fanout)
 		leftBoundary := 0
 		rightBoundary := 0
 		for i := 0; i < fanout; i++ {
 			leftBoundary = rightBoundary
 			// Implement lower_bound logic here similar to previous examples
-			rightBoundary = node.DataCapacity
-			if i == fanout-1 {
-				rightBoundary = node.LowerBound(shared.KeyType((float64(i+1) - b) / a))
+			rightBoundary = currentNode.DataCapacity
+			if i != fanout-1 {
+				rightBoundary = currentNode.LowerBound(shared.KeyType((float64(i+1) - b) / a))
 			}
 
 			if leftBoundary == rightBoundary {
@@ -164,15 +162,16 @@ func FindBestFanoutExistingNode(
 			}
 
 			numActualKeys := 0
-			model := linear_model.NewLinearModel(0, 0)
-			modelBuilder := linear_model.NewLinearModelBuilder(model)
-			node.IterateFilledPositions(func(key shared.KeyType, payload shared.PayloadType, i int) {
-				modelBuilder.Add(float64(key), float64(i))
+			linearModel := linear_model.NewLinearModel(0, 0)
+			modelBuilder := linear_model.NewLinearModelBuilder(linearModel)
+			currentNode.IterateFilledPositions(func(key shared.KeyType, payload shared.PayloadType, i int, j int) {
+				modelBuilder.Add(float64(key), float64(j))
 				numActualKeys++
 			}, leftBoundary, rightBoundary)
+			modelBuilder.Build()
 
-			nodeCost := 0.0 // Placeholder for cost computation
-
+			empiricalInsertFrac := currentNode.FracInserts()
+			nodeCost, expectedAvgExpSearchIterations, expectedAvgShifts := node.ComputeExpectedCostFromExisting(currentNode, leftBoundary, rightBoundary, shared.KInitialDensity, empiricalInsertFrac, linearModel)
 			cost += nodeCost * float64(numActualKeys) / float64(numKeys)
 
 			newLevel = append(newLevel, &FTNode{
@@ -182,11 +181,11 @@ func FindBestFanoutExistingNode(
 				leftBoundary,
 				rightBoundary,
 				false,
-				0,
-				0,
+				expectedAvgExpSearchIterations,
+				expectedAvgShifts,
 				numActualKeys,
-				model.A,
-				model.B,
+				linearModel.A,
+				linearModel.B,
 			})
 		}
 		traversalCost := shared.KNodeLookupsWeight + (shared.KModelSizeWeight * float64(fanout) * (typeSize + float64(unsafe.Sizeof(uintptr(0)))) * float64(totalKeys) / float64(numKeys))
