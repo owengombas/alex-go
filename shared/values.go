@@ -1,6 +1,8 @@
 package shared
 
 import (
+	LocalBitmap "alex_go/bitmap"
+	"github.com/kelindar/bitmap"
 	"math"
 	"unsafe"
 )
@@ -86,3 +88,15 @@ const SplittingPolicyMethod int = DecideBetweenNoSplittingOrSplittingInTwo
 // Splitting upwards can result in a better RMI, but has much more overhead
 // than splitting sideways
 const AllowSplittingUpwards bool = false
+
+func NewBitmapSMID(dataCapacity int) LocalBitmap.Bitmap {
+	return &bitmap.Bitmap{}
+}
+
+func NewBitmapNaive(dataCapacity int) LocalBitmap.Bitmap {
+	return LocalBitmap.NewNaiveBitmap(dataCapacity)
+}
+
+func NewBitmap(dataCapacity int) LocalBitmap.Bitmap {
+	return NewBitmapSMID(dataCapacity)
+}

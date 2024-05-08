@@ -1,6 +1,7 @@
 package node
 
 import (
+	"alex_go/bitmap"
 	"alex_go/cost_models"
 	"alex_go/linear_model"
 	"alex_go/shared"
@@ -30,7 +31,7 @@ type DataNode struct {
 	// Bitmap: each uint64_t represents 64 positions in reverse order
 	// (i.e., each uint64_t is "read" from the right-most bit to the left-most
 	// bit)
-	Bitmap []bool
+	Bitmap bitmap.Bitmap
 
 	// Expand after m_num_keys is >= this number
 	ExpansionThreshold float64
@@ -249,11 +250,11 @@ func (self *DataNode) FindKeyPosition(key shared.KeyType) (int, error) {
 func (self *DataNode) InsertElementAt(key shared.KeyType, payload shared.PayloadType, pos int) {
 	self.Keys[pos] = key
 	self.Payloads[pos] = payload
-	self.Bitmap[pos] = true
+	self.Bitmap.Set(uint32(pos))
 
 	// Overwrite preceding gaps until we reach the previous element
 	pos--
-	for pos >= 0 && !self.Bitmap[pos] {
+	for pos >= 0 && !self.Bitmap.Contains(uint32(pos)) {
 		self.Keys[pos] = key
 		pos--
 	}
@@ -268,23 +269,23 @@ func (self *DataNode) ClosestGap(pos int) (int, error) {
 	maxDirectionalOffset := min(maxLeftOffset, maxRightOffset)
 	distance := 1
 	for distance <= maxDirectionalOffset {
-		if !self.Bitmap[pos-distance] {
+		if !self.Bitmap.Contains(uint32(pos - distance)) {
 			return pos - distance, nil
 		}
-		if !self.Bitmap[pos+distance] {
+		if !self.Bitmap.Contains(uint32(pos + distance)) {
 			return pos + distance, nil
 		}
 		distance++
 	}
 	if maxLeftOffset > maxRightOffset {
 		for i := pos - distance; i >= 0; i-- {
-			if !self.Bitmap[i] {
+			if !self.Bitmap.Contains(uint32(i)) {
 				return i, nil
 			}
 		}
 	} else {
 		for i := pos + distance; i < self.DataCapacity; i++ {
-			if !self.Bitmap[i] {
+			if !self.Bitmap.Contains(uint32(i)) {
 				return i, nil
 			}
 		}
@@ -309,7 +310,7 @@ func (self *DataNode) FindInsertPosition(key shared.KeyType) (int, int) {
 
 	// insert to the right of duplicate keys
 	pos := self.ExponentialSearchUpperBound(predictPosition, key)
-	if predictPosition <= pos || self.Bitmap[pos] {
+	if predictPosition <= pos || self.Bitmap.Contains(uint32(pos)) {
 		return pos, pos
 	} else {
 		return min(predictPosition, self.GetNextFilledPosition(pos, true)-1), pos
@@ -323,7 +324,7 @@ func (self *DataNode) InsertUsingShifts(key shared.KeyType, payload shared.Paylo
 	if err != nil {
 		panic(err)
 	}
-	self.Bitmap[gapPos] = true
+	self.Bitmap.Set(uint32(gapPos))
 
 	if gapPos >= pos {
 		for i := gapPos; i > pos; i-- {
@@ -356,7 +357,7 @@ func (self *DataNode) GetNextFilledPosition(pos int, exclusive bool) int {
 		}
 	}
 
-	for pos < self.DataCapacity && !self.Bitmap[pos] {
+	for pos < self.DataCapacity && !self.Bitmap.Contains(uint32(pos)) {
 		pos++
 	}
 
@@ -456,8 +457,8 @@ func (self *DataNode) EraseRange(startKey shared.KeyType, endKey shared.KeyType,
 
 	for pos >= 0 && self.Keys[pos] >= startKey {
 		self.Keys[pos] = nextKey
-		self.Bitmap[pos] = false
-		if self.Bitmap[pos] {
+		self.Bitmap.Remove(uint32(pos))
+		if self.Bitmap.Contains(uint32(pos)) {
 			numErased++
 		}
 		pos--
@@ -497,7 +498,7 @@ func (self *DataNode) Insert(key shared.KeyType, payload shared.PayloadType) (in
 
 	insertionPosition, _ := self.FindInsertPosition(key)
 
-	if insertionPosition < self.DataCapacity && !self.Bitmap[insertionPosition] {
+	if insertionPosition < self.DataCapacity && !self.Bitmap.Contains(uint32(insertionPosition)) {
 		self.InsertElementAt(key, payload, insertionPosition)
 	} else {
 		insertionPosition = self.InsertUsingShifts(key, payload, insertionPosition)
@@ -524,7 +525,7 @@ func (self *DataNode) Resize(targetDensity float64, forceRetrain bool, keepLeft 
 	newDataCapacity := max(int(float64(self.NumKeys)/targetDensity), self.NumKeys+1)
 	newKeySlots := make([]shared.KeyType, newDataCapacity)
 	newPayloadSlots := make([]shared.PayloadType, newDataCapacity)
-	newBitmap := make([]bool, newDataCapacity)
+	newBitmap := shared.NewBitmap(newDataCapacity)
 
 	if self.NumKeys < shared.NumKeysDataNodeRetrainThreshold || forceRetrain {
 		linearModelBuilder := linear_model.NewLinearModelBuilder(&self.LinearModel)
@@ -568,7 +569,7 @@ func (self *DataNode) Resize(targetDensity float64, forceRetrain bool, keepLeft 
 			for pos < newDataCapacity {
 				newKeySlots[pos] = self.Keys[i]
 				newPayloadSlots[pos] = self.Payloads[i]
-				newBitmap[pos] = true
+				newBitmap.Set(uint32(pos))
 
 				i = self.GetNextFilledPosition(i+1, false)
 				pos++
@@ -584,7 +585,7 @@ func (self *DataNode) Resize(targetDensity float64, forceRetrain bool, keepLeft 
 
 		newKeySlots[position] = self.Keys[i]
 		newPayloadSlots[position] = self.Payloads[i]
-		newBitmap[position] = true
+		newBitmap.Set(uint32(position))
 
 		lastPosition = position
 		keysRemaining--
@@ -607,7 +608,7 @@ func (self *DataNode) Resize(targetDensity float64, forceRetrain bool, keepLeft 
 func (self *DataNode) IterateFilledPositions(yield func(shared.KeyType, shared.PayloadType, int, int), start int, end int) {
 	j := 0
 	for i := max(start, 0); i < min(self.DataCapacity, end); i++ {
-		if self.Bitmap[i] {
+		if self.Bitmap.Contains(uint32(i)) {
 			key := self.Keys[i]
 			payload := self.Payloads[i]
 			yield(key, payload, i, j)
@@ -618,7 +619,7 @@ func (self *DataNode) IterateFilledPositions(yield func(shared.KeyType, shared.P
 
 func (self *DataNode) GetFirstKey() shared.KeyType {
 	for i := 0; i < self.DataCapacity; i++ {
-		if self.Bitmap[i] {
+		if self.Bitmap.Contains(uint32(i)) {
 			return self.Keys[i]
 		}
 	}
@@ -627,7 +628,7 @@ func (self *DataNode) GetFirstKey() shared.KeyType {
 
 func (self *DataNode) GetLastKey() shared.KeyType {
 	for i := self.DataCapacity - 1; i >= 0; i-- {
-		if self.Bitmap[i] {
+		if self.Bitmap.Contains(uint32(i)) {
 			return self.Keys[i]
 		}
 	}
@@ -640,7 +641,7 @@ func (self *DataNode) GetLastKey() shared.KeyType {
 func (self *DataNode) NumKeysInRange(left int, right int) int {
 	numKeys := 0
 	for i := left; i < right; i++ {
-		if self.Bitmap[i] {
+		if self.Bitmap.Contains(uint32(i)) {
 			numKeys++
 		}
 	}
@@ -664,7 +665,7 @@ func (self *DataNode) Initialize(numKeys int, density float64) {
 	self.DataCapacity = int(max(float64(numKeys)/density, float64(numKeys)+1))
 	self.Keys = make([]shared.KeyType, self.DataCapacity)
 	self.Payloads = make([]shared.PayloadType, self.DataCapacity)
-	self.Bitmap = make([]bool, self.DataCapacity)
+	self.Bitmap = shared.NewBitmap(self.DataCapacity)
 }
 
 func (self *DataNode) BulkLoad(values []shared.PayloadType, numKeys int, preTrainedModel *linear_model.LinearModel, trainWithSample bool) {
@@ -758,7 +759,7 @@ func (self *DataNode) BulkLoadFromExisting(
 			for pos < self.DataCapacity {
 				self.Keys[pos] = node.Keys[i]
 				self.Payloads[pos] = node.Payloads[i]
-				self.Bitmap[pos] = true
+				self.Bitmap.Set(uint32(pos))
 
 				i = node.GetNextFilledPosition(i+1, false)
 				pos++
@@ -774,7 +775,7 @@ func (self *DataNode) BulkLoadFromExisting(
 
 		self.Keys[position] = node.Keys[i]
 		self.Payloads[position] = node.Payloads[i]
-		self.Bitmap[position] = true
+		self.Bitmap.Set(uint32(position))
 
 		lastPosition = position
 		keysRemaining--
@@ -887,7 +888,7 @@ func NewDataNode(dataCapacity int) *DataNode {
 		Keys:                           make([]shared.KeyType, dataCapacity),
 		NumKeys:                        0,
 		DataCapacity:                   dataCapacity,
-		Bitmap:                         make([]bool, dataCapacity),
+		Bitmap:                         shared.NewBitmap(dataCapacity),
 		ExpansionThreshold:             1.0,
 		ContractionThreshold:           0.0,
 		NumShifts:                      0,

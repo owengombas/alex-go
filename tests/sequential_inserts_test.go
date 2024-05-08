@@ -14,8 +14,14 @@ func TestSequentialInserts(t *testing.T) {
 	for i := 0; i < len(keys); i++ {
 		err := alex.Insert(keys[i], values[i])
 		if err != nil {
-			fmt.Println(err)
 			t.Error(err)
+		}
+		retreived, err := alex.Find(keys[i])
+		if err != nil {
+			t.Error(err)
+		}
+		if values[i] != *retreived {
+			t.Errorf("Retrieval error for key %d expected %d go %d", keys[i], values[i], *retreived)
 		}
 	}
 
