@@ -2,14 +2,14 @@ package benchmarks
 
 import (
 	"alex_go/index"
-	"alex_go/utils"
+	"alex_go/shared"
 	"fmt"
 	"testing"
 )
 
 func BenchmarkSequentialInserts(b *testing.B) {
 	alex := index.NewIndex()
-	keys, values := utils.ReadValuesFromFile("../values.txt")
+	keys, values := shared.ReadValuesFromFile("../values.txt")
 
 	b.StartTimer()
 	for i := 0; i < len(keys); i++ {

@@ -2,14 +2,14 @@ package tests
 
 import (
 	"alex_go/index"
-	"alex_go/utils"
+	"alex_go/shared"
 	"fmt"
 	"testing"
 )
 
 func TestSequentialInserts(t *testing.T) {
 	alex := index.NewIndex()
-	keys, values := utils.ReadValuesFromFile("../values.txt")
+	keys, values := shared.ReadValuesFromFile("../values.txt")
 
 	for i := 0; i < len(keys); i++ {
 		err := alex.Insert(keys[i], values[i])
