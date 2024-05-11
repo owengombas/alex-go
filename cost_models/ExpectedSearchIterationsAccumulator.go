@@ -1,12 +1,14 @@
 package cost_models
 
+import "math"
+
 type ExpectedSearchIterationsAccumulator struct {
 	cumulativeLogError float64
 	count              int
 }
 
-func (e *ExpectedSearchIterationsAccumulator) Accumulate(actualPosition int, expectedPosition int, logError float64) {
-	e.cumulativeLogError += logError
+func (e *ExpectedSearchIterationsAccumulator) Accumulate(actualPosition int, expectedPosition int) {
+	e.cumulativeLogError += math.Log2(math.Abs(float64(expectedPosition-actualPosition)) + 1)
 	e.count++
 }
 

@@ -53,6 +53,7 @@ func (self *LinearModelBuilder) Build() {
 		return
 	}
 
+	// Zero variance check, fit horizontal line
 	if float64(self.count)*self.xxSum-self.xSum*self.xSum == 0.0 {
 		self.model.A = 0.0
 		self.model.B = self.ySum / float64(self.count)

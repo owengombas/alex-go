@@ -424,8 +424,8 @@ func (self *DataNode) ComputeExpectedCost(fracInserts float64) float64 {
 	shiftsAccumulator := cost_models.NewExpectedShiftsAccumulator(self.DataCapacity)
 	self.IterateFilledPositions(func(key shared.KeyType, payload shared.PayloadType, i int, j int) {
 		predictedPosition := max(0, min(self.DataCapacity-1, self.LinearModel.Predict(float64(key))))
-		searchIterationsAccumaulator.Accumulate(i, predictedPosition, 0.0)
-		shiftsAccumulator.Accumulate(i, predictedPosition, 0.0)
+		searchIterationsAccumaulator.Accumulate(i, predictedPosition)
+		shiftsAccumulator.Accumulate(i, predictedPosition)
 	}, 0, self.DataCapacity)
 
 	expectedAvgExpSearchIterations := searchIterationsAccumaulator.GetStats()
@@ -811,13 +811,13 @@ func BuildNodeImplicitFromExisting(
 			actualPosition = dataCapacity - keysRemaining
 			for actualPosition < dataCapacity {
 				predictedPosition = max(0, min(dataCapacity-1, linearModel.Predict(float64(node.Keys[i]))))
-				acc.Accumulate(actualPosition, predictedPosition, 0.0)
+				acc.Accumulate(actualPosition, predictedPosition)
 				actualPosition++
 				i = node.GetNextFilledPosition(i+1, false)
 			}
 			break
 		}
-		acc.Accumulate(actualPosition, predictedPosition, 0.0)
+		acc.Accumulate(actualPosition, predictedPosition)
 		lastPosition = actualPosition
 		keysRemaining--
 		i = node.GetNextFilledPosition(i+1, false)

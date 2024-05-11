@@ -11,7 +11,7 @@ type ExpectedSearchIterationsAndShiftsAccumulator struct {
 	dataCapacity          int
 }
 
-func (e *ExpectedSearchIterationsAndShiftsAccumulator) Accumulate(actualPosition int, expectedPosition int, logError float64) {
+func (e *ExpectedSearchIterationsAndShiftsAccumulator) Accumulate(actualPosition int, expectedPosition int) {
 	e.cumulativeLogError += math.Log2(math.Abs(float64(expectedPosition-actualPosition)) + 1)
 	if actualPosition > e.lastPosition+1 {
 		denseRegionLength := e.lastPosition - e.denseRegionStartIndex + 1

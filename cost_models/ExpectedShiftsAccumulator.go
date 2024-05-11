@@ -13,7 +13,7 @@ type ExpectedShiftsAccumulator struct {
 // ((n-1)/2)((n-1)/2 + 1) = n^2/4 - 1/4
 // This is exact for odd n and off by 0.25 for even n.
 // Therefore, we track n^2/4.
-func (e *ExpectedShiftsAccumulator) Accumulate(actualPosition int, expectedPosition int, logError float64) {
+func (e *ExpectedShiftsAccumulator) Accumulate(actualPosition int, expectedPosition int) {
 	if actualPosition > e.lastPosition+1 {
 		denseRegionLength := e.lastPosition - e.denseRegionStartIndex + 1
 		e.numExpectedShifts += (denseRegionLength * denseRegionLength) / 4
