@@ -3,37 +3,165 @@ package tests
 import (
 	"alex_go/index"
 	"alex_go/shared"
+	"bufio"
+	"errors"
 	"fmt"
+	"math/rand"
+	"os"
 	"testing"
 )
 
-func TestSequentialInserts(t *testing.T) {
-	alex := index.NewIndex()
-	keys, values := shared.ReadValuesFromFile("../values.txt")
+func generateRandomKeys(N int) []int {
+	source := rand.NewSource(42)
+	rng := rand.New(source)
+	keys := make([]int, N)
+	existingKeys := map[int]bool{}
+	for i := 0; i < N; i++ {
+		for {
+			key := rng.Intn(N * 2)
+			if _, ok := existingKeys[key]; !ok {
+				keys[i] = key
+				existingKeys[key] = true
+				break
+			}
+		}
+	}
+	return keys
+}
+
+func saveKeysToCSV(keys []int) error {
+	file, err := os.Create(fmt.Sprintf("keys_%d.csv", len(keys)))
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	writer := bufio.NewWriter(file)
+	defer writer.Flush()
 
 	for i := 0; i < len(keys); i++ {
-		err := alex.Insert(keys[i], values[i])
+		_, err := writer.WriteString(fmt.Sprintf("%d\n", keys[i]))
 		if err != nil {
-			t.Error(err)
-		}
-		retreived, err := alex.Find(keys[i])
-		if err != nil {
-			t.Error(err)
-		}
-		if values[i] != *retreived {
-			t.Errorf("Retrieval error for key %d expected %d go %d", keys[i], values[i], *retreived)
+			return err
 		}
 	}
 
+	return nil
+}
+
+func sequentialInserts(keys []shared.KeyType) (*index.Index, []int, error) {
+	alex := index.NewIndex()
+
+	for i := 0; i < len(keys); i++ {
+		key := keys[i]
+		err := alex.Insert(key, i)
+		if key == 7497468244883513247 {
+			fmt.Println("key", key)
+		}
+		if err != nil {
+			return alex, keys, err
+		}
+	}
+
+	return alex, keys, nil
+}
+
+func sequentialLookups(alex index.Index, keys []int) error {
 	for i := 0; i < len(keys); i++ {
 		payload, err := alex.Find(keys[i])
 		if err != nil {
-			fmt.Println(err)
-			t.Error(err)
+			return err
 		} else {
-			if values[i] != *payload {
-				t.Errorf("Retrieval error for key %d expected %d go %d", keys[i], values[i], *payload)
+			if i != *payload {
+				return errors.New(fmt.Sprintf("retrieval error for key %d expected %d got %d", keys[i], i, *payload))
 			}
 		}
+	}
+	return nil
+}
+
+func TestSequentialInserts1k(t *testing.T) {
+	keys := generateRandomKeys(1_000)
+	saveKeysToCSV(keys)
+	alex, keys, err := sequentialInserts(keys)
+	if err != nil {
+		t.Error(err)
+	}
+	err = sequentialLookups(*alex, keys)
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestSequentialInserts10k(t *testing.T) {
+	keys := generateRandomKeys(10_000)
+	saveKeysToCSV(keys)
+	alex, keys, err := sequentialInserts(keys)
+	if err != nil {
+		t.Error(err)
+	}
+	err = sequentialLookups(*alex, keys)
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestSequentialInserts100k(t *testing.T) {
+	keys := generateRandomKeys(100_000)
+	saveKeysToCSV(keys)
+	alex, keys, err := sequentialInserts(keys)
+	if err != nil {
+		t.Error(err)
+	}
+	err = sequentialLookups(*alex, keys)
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestSequentialInserts1m(t *testing.T) {
+	keys := generateRandomKeys(1_000_000)
+	saveKeysToCSV(keys)
+	alex, keys, err := sequentialInserts(keys)
+	if err != nil {
+		t.Error(err)
+	}
+	err = sequentialLookups(*alex, keys)
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestSequentialInserts10m(t *testing.T) {
+	keys := generateRandomKeys(10_000_000)
+	saveKeysToCSV(keys)
+	alex, keys, err := sequentialInserts(keys)
+	if err != nil {
+		t.Error(err)
+	}
+	err = sequentialLookups(*alex, keys)
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func BenchmarkSequentialInserts1kTo10m(b *testing.B) {
+	for i := 1; i <= 7; i++ {
+		N := 1
+		for j := 0; j < i; j++ {
+			N *= 10
+		}
+		keys := generateRandomKeys(N)
+		b.Run(fmt.Sprintf("SequentialInserts%d", N), func(b *testing.B) {
+			b.ResetTimer()
+			alex, _, err := sequentialInserts(keys)
+			if err != nil {
+				b.Error(err)
+			}
+			err = sequentialLookups(*alex, keys)
+			if err != nil {
+				b.Error(err)
+			}
+		})
 	}
 }

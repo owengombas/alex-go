@@ -306,14 +306,14 @@ func (self *DataNode) PredictPosition(key shared.KeyType) int {
 // If there are duplicate keys, the insert position will be to the right of
 // all existing keys of the same value.
 func (self *DataNode) FindInsertPosition(key shared.KeyType) (int, int) {
-	predictPosition := self.PredictPosition(key) // first use model to get prediction
+	predictedPosition := self.PredictPosition(key) // first use model to get prediction
 
 	// insert to the right of duplicate keys
-	pos := self.ExponentialSearchUpperBound(predictPosition, key)
-	if predictPosition <= pos || self.Bitmap.Contains(uint32(pos)) {
+	pos := self.ExponentialSearchUpperBound(predictedPosition, key)
+	if predictedPosition <= pos || self.Bitmap.Contains(uint32(pos)) {
 		return pos, pos
 	} else {
-		return min(predictPosition, self.GetNextFilledPosition(pos, true)-1), pos
+		return min(predictedPosition, self.GetNextFilledPosition(pos, true)-1), pos
 	}
 }
 
@@ -742,7 +742,7 @@ func (self *DataNode) BulkLoadFromExisting(
 	lastPosition := -1
 	keysRemaining := self.NumKeys
 	i := node.GetNextFilledPosition(left, false)
-	minKey := node.Keys[i]
+	self.MinKey = node.Keys[i]
 	for i < right {
 		position := self.LinearModel.Predict(float64(node.Keys[i]))
 		position = max(position, lastPosition+1)
@@ -753,7 +753,7 @@ func (self *DataNode) BulkLoadFromExisting(
 			pos := self.DataCapacity - keysRemaining
 
 			for j := lastPosition + 1; j < pos; j++ {
-				self.Keys[j] = minKey
+				self.Keys[j] = node.Keys[i]
 			}
 
 			for pos < self.DataCapacity {

@@ -10,6 +10,9 @@ It is based on the C++ implementation by the authors of the paper (https://githu
 - [ ] Deletion
 - [ ] Bulk loading
 
+## Be careful of large keys
+The model are built using a linear regression model, keys will be potentially squared. Which can overflow the float64 type in Go and break the model.
+
 ## Credits
 ```
 @inproceedings{Ding_2020, series={SIGMOD/PODS ’20},

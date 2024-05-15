@@ -262,17 +262,23 @@ func (self *Index) GetLeaf(key shared.KeyType, buildTraversalPath bool) (*node.D
 }
 
 func (self *Index) shouldExpandRight() bool {
-	return !self.rootNode.IsLeaf() &&
-		((self.numKeysAboveKeyDomain >= shared.KMinOutOfDomainKeys &&
-			self.numKeysAboveKeyDomain >= shared.KOutOfDomainToleranceFactor*(self.numKeys/self.numKeysAtLastRightDomainResize-1)) ||
-			self.numKeysAboveKeyDomain >= shared.KMaxOutOfDomainKeys)
+	isNotLeaf := !self.rootNode.IsLeaf()
+	c1 := self.numKeysAboveKeyDomain >= shared.KMinOutOfDomainKeys
+	toleranceFactorCondition := float64(self.numKeys)/float64(self.numKeysAtLastRightDomainResize) - 1
+	c2 := float64(self.numKeysAboveKeyDomain) >= float64(shared.KOutOfDomainToleranceFactor)*toleranceFactorCondition
+	c3 := self.numKeysAboveKeyDomain >= shared.KMaxOutOfDomainKeys
+	c1c2 := c1 && c2
+	return isNotLeaf && (c1c2 || c3)
 }
 
 func (self *Index) shouldExpandLeft() bool {
-	return !self.rootNode.IsLeaf() &&
-		((self.numKeysBelowKeyDomain >= shared.KMinOutOfDomainKeys &&
-			self.numKeysBelowKeyDomain >= shared.KOutOfDomainToleranceFactor*(self.numKeys/self.numKeysAtLastLeftDomainResize-1)) ||
-			self.numKeysBelowKeyDomain >= shared.KMaxOutOfDomainKeys)
+	isNotLeaf := !self.rootNode.IsLeaf()
+	c1 := self.numKeysBelowKeyDomain >= shared.KMinOutOfDomainKeys
+	toleranceFactorCondition := float64(self.numKeys)/float64(self.numKeysAtLastLeftDomainResize) - 1
+	c2 := float64(self.numKeysBelowKeyDomain) >= float64(shared.KOutOfDomainToleranceFactor)*toleranceFactorCondition
+	c3 := self.numKeysBelowKeyDomain >= shared.KMaxOutOfDomainKeys
+	c1c2 := c1 && c2
+	return isNotLeaf && (c1c2 || c3)
 }
 
 func (self *Index) updateSuperRootNodePointer() {
@@ -372,7 +378,7 @@ func (self *Index) expandRoot(key shared.KeyType, expandLeft bool) {
 		self.numKeysAboveKeyDomain = 0
 		outermostNode = self.FirstDataNode()
 	} else {
-		keyDifference := self.keyDomainMax - max(key, self.GetMaxKey())
+		keyDifference := max(key, self.GetMaxKey()) - self.keyDomainMax
 		expansionFactor = shared.Pow2RoundUp((keyDifference+domainSize-1)/domainSize + 1)
 
 		halfExpandableDomain := shared.MaxKey/2 - self.keyDomainMin/2
@@ -510,7 +516,7 @@ func (self *Index) expandRoot(key shared.KeyType, expandLeft bool) {
 		for i := newNodesStart; i < newNodesEnd; i += n {
 			leftBoundary := rightBoundary
 			if i+n >= inBoundsNewNodesEnd {
-				rightBoundary = outermostNode.NumKeys
+				rightBoundary = outermostNode.DataCapacity
 			} else {
 				rightBoundaryValue += domainSize
 				rightBoundary = outermostNode.LowerBound(rightBoundaryValue)
@@ -574,22 +580,22 @@ func (self *Index) updateSuperRootKeyDomain() {
 }
 
 func (self *Index) linkDataNodes(
-	oldLead *node.DataNode,
+	oldLeaf *node.DataNode,
 	leftLeaf *node.DataNode,
 	rightLeaf *node.DataNode,
 ) {
-	if oldLead.PrevLeaf != nil {
-		oldLead.PrevLeaf.NextLeaf = leftLeaf
+	if oldLeaf.PrevLeaf != nil {
+		oldLeaf.PrevLeaf.NextLeaf = leftLeaf
 	}
 
-	leftLeaf.PrevLeaf = oldLead.PrevLeaf
+	leftLeaf.PrevLeaf = oldLeaf.PrevLeaf
 	leftLeaf.NextLeaf = rightLeaf
 
 	rightLeaf.PrevLeaf = leftLeaf
-	rightLeaf.NextLeaf = oldLead.NextLeaf
+	rightLeaf.NextLeaf = oldLeaf.NextLeaf
 
-	if oldLead.NextLeaf != nil {
-		oldLead.NextLeaf.PrevLeaf = rightLeaf
+	if oldLeaf.NextLeaf != nil {
+		oldLeaf.NextLeaf.PrevLeaf = rightLeaf
 	}
 }
 
@@ -639,7 +645,7 @@ func (self *Index) createTwoNewDataNodes(
 	rightLeaf := self.bulkLoadLeafNodeFromExisting(
 		oldNode,
 		rightBoundary,
-		oldNode.NumKeys,
+		oldNode.DataCapacity,
 		true,
 		nil,
 		reuseModel,
@@ -757,7 +763,7 @@ func (self *Index) splitDownwards(
 
 	// Create the new model node that will replace the current data node
 	fanout := 1 << fanoutTreeDepth
-	newNode := node.NewModelNode(leaf.GetLevel() + 1)
+	newNode := node.NewModelNode(leaf.GetLevel())
 	newNode.DuplicationFactor = leaf.DuplicationFactor
 	newNode.NumChildren = fanout
 	newNode.Children = make([]node.Node, fanout)
@@ -774,7 +780,7 @@ func (self *Index) splitDownwards(
 		rightBoundaryValue := (float64(endBucketID) - parentNode.ModelNode.LinearModel.B) / parentNode.ModelNode.LinearModel.A
 
 		newNode.LinearModel.A = 1.0 / float64(rightBoundaryValue-leftBoundaryValue) * float64(fanout)
-		newNode.LinearModel.B = -newNode.LinearModel.A * float64(leftBoundaryValue)
+		newNode.LinearModel.B = -newNode.LinearModel.A * leftBoundaryValue
 	}
 
 	// Create new data nodes
@@ -799,6 +805,7 @@ func (self *Index) splitDownwards(
 			0,
 		)
 	}
+
 	self.numDataNodes--
 	self.numModelNodes++
 	for i := startBucketID; i < endBucketID; i++ {
@@ -938,7 +945,7 @@ func (self *Index) Insert(key shared.KeyType, payload shared.PayloadType) error 
 					}
 					panic("Not implemented")
 				} else {
-					shouldSplitDownwards := parent.NumChildren*bestFanout/(1<<parent.GetDuplicationFactor()) > self.maxFanout || parent.GetLevel() == self.superRootNode.GetLevel()
+					shouldSplitDownwards := parent.NumChildren*bestFanout/(1<<leaf.GetDuplicationFactor()) > self.maxFanout || parent.GetLevel() == self.superRootNode.GetLevel()
 
 					if shouldSplitDownwards {
 						parent.ModelNode = self.splitDownwards(
@@ -952,7 +959,7 @@ func (self *Index) Insert(key shared.KeyType, payload shared.PayloadType) error 
 						self.splitSideways(
 							parent,
 							bucketID,
-							bestFanout,
+							fanoutTreeDepth,
 							&usedFanoutTree,
 							reuseModel,
 						)
@@ -980,7 +987,7 @@ func (self *Index) Find(key shared.KeyType) (*shared.PayloadType, error) {
 	self.numLookups++
 	leaf, _ := self.GetLeaf(key, false)
 	idx, err := leaf.FindKeyPosition(key)
-	if idx < 0 {
+	if err != nil {
 		return nil, err
 	}
 	return &leaf.Payloads[idx], nil
