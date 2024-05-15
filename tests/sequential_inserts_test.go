@@ -132,7 +132,7 @@ func TestSequentialInserts1m(t *testing.T) {
 	}
 }
 
-func BenchmarkSequentialInserts1kTo10m(b *testing.B) {
+func BenchmarkSequentialInserts1kTo1m(b *testing.B) {
 	for i := 1_000; i <= 1_000_000; i *= 10 {
 		keys := generateRandomKeys(i)
 		b.Run(fmt.Sprintf("SequentialInserts_%d", i), func(b *testing.B) {
