@@ -11,14 +11,14 @@ import (
 	"testing"
 )
 
-func generateRandomKeys(N int) []int {
+func generateRandomKeys(N int) []shared.KeyType {
 	source := rand.NewSource(42)
 	rng := rand.New(source)
-	keys := make([]int, N)
-	existingKeys := map[int]bool{}
+	keys := make([]shared.KeyType, N)
+	existingKeys := map[shared.KeyType]bool{}
 	for i := 0; i < N; i++ {
 		for {
-			key := rng.Intn(N * 2)
+			key := shared.KeyType(rng.Intn(N * 2))
 			if _, ok := existingKeys[key]; !ok {
 				keys[i] = key
 				existingKeys[key] = true
@@ -29,7 +29,7 @@ func generateRandomKeys(N int) []int {
 	return keys
 }
 
-func saveKeysToCSV(keys []int) error {
+func saveKeysToCSV(keys []shared.KeyType) error {
 	file, err := os.Create(fmt.Sprintf("keys_%d.csv", len(keys)))
 	if err != nil {
 		return err
@@ -49,7 +49,7 @@ func saveKeysToCSV(keys []int) error {
 	return nil
 }
 
-func sequentialInserts(keys []shared.KeyType) (*index.Index, []int, error) {
+func sequentialInserts(keys []shared.KeyType) (*index.Index, []shared.KeyType, error) {
 	alex := index.NewIndex()
 
 	for i := 0; i < len(keys); i++ {
@@ -63,7 +63,7 @@ func sequentialInserts(keys []shared.KeyType) (*index.Index, []int, error) {
 	return alex, keys, nil
 }
 
-func sequentialLookups(alex index.Index, keys []int) error {
+func sequentialLookups(alex *index.Index, keys []shared.KeyType) error {
 	for i := 0; i < len(keys); i++ {
 		payload, err := alex.Find(keys[i])
 		if err != nil {
@@ -84,7 +84,7 @@ func TestSequentialInserts1k(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	err = sequentialLookups(*alex, keys)
+	err = sequentialLookups(alex, keys)
 	if err != nil {
 		t.Error(err)
 	}
@@ -97,7 +97,7 @@ func TestSequentialInserts10k(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	err = sequentialLookups(*alex, keys)
+	err = sequentialLookups(alex, keys)
 	if err != nil {
 		t.Error(err)
 	}
@@ -110,7 +110,7 @@ func TestSequentialInserts100k(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	err = sequentialLookups(*alex, keys)
+	err = sequentialLookups(alex, keys)
 	if err != nil {
 		t.Error(err)
 	}
@@ -123,7 +123,7 @@ func TestSequentialInserts1m(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	err = sequentialLookups(*alex, keys)
+	err = sequentialLookups(alex, keys)
 	if err != nil {
 		t.Error(err)
 	}
@@ -134,11 +134,25 @@ func BenchmarkSequentialInserts1kTo1m(b *testing.B) {
 		keys := generateRandomKeys(i)
 		b.Run(fmt.Sprintf("SequentialInserts_%d", i), func(b *testing.B) {
 			b.ResetTimer()
-			alex, _, err := sequentialInserts(keys)
+			_, _, err := sequentialInserts(keys)
 			if err != nil {
 				b.Error(err)
 			}
-			err = sequentialLookups(*alex, keys)
+		})
+	}
+}
+
+func BenchmarkSequentialLookup1kTo1m(b *testing.B) {
+	for i := 1_000; i <= 1_000_000; i *= 10 {
+		b.Run(fmt.Sprintf("SequentialInserts_%d", i), func(b *testing.B) {
+			keys := generateRandomKeys(i)
+			index, _, err := sequentialInserts(keys)
+			if err != nil {
+				b.Error(err)
+			}
+
+			b.ResetTimer()
+			err = sequentialLookups(index, keys)
 			if err != nil {
 				b.Error(err)
 			}
