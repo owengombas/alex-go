@@ -864,7 +864,7 @@ func (self *Index) splitSideways(
 		// Extra duplication factor is required when there are more redundant
 		// pointers than necessary
 		extraDuplication := max(0, leaf.DuplicationFactor-fanoutTreeDepth)
-		self.createTwoNewDataNodes(leaf, parent.ModelNode, fanoutTreeDepth+extraDuplication, reuseModel, startBucketID)
+		self.createNewDataNodes(leaf, parent.ModelNode, fanoutTreeDepth, usedFanoutTree, startBucketID, extraDuplication)
 	}
 	self.numDataNodes--
 }

@@ -132,27 +132,10 @@ func TestSequentialInserts1m(t *testing.T) {
 	}
 }
 
-func TestSequentialInserts10m(t *testing.T) {
-	keys := generateRandomKeys(10_000_000)
-	saveKeysToCSV(keys)
-	alex, keys, err := sequentialInserts(keys)
-	if err != nil {
-		t.Error(err)
-	}
-	err = sequentialLookups(*alex, keys)
-	if err != nil {
-		t.Error(err)
-	}
-}
-
 func BenchmarkSequentialInserts1kTo10m(b *testing.B) {
-	for i := 1; i <= 7; i++ {
-		N := 1
-		for j := 0; j < i; j++ {
-			N *= 10
-		}
-		keys := generateRandomKeys(N)
-		b.Run(fmt.Sprintf("SequentialInserts%d", N), func(b *testing.B) {
+	for i := 1_000; i <= 1_000_000; i *= 10 {
+		keys := generateRandomKeys(i)
+		b.Run(fmt.Sprintf("SequentialInserts_%d", i), func(b *testing.B) {
 			b.ResetTimer()
 			alex, _, err := sequentialInserts(keys)
 			if err != nil {
