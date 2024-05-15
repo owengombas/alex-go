@@ -55,9 +55,6 @@ func sequentialInserts(keys []shared.KeyType) (*index.Index, []int, error) {
 	for i := 0; i < len(keys); i++ {
 		key := keys[i]
 		err := alex.Insert(key, i)
-		if key == 7497468244883513247 {
-			fmt.Println("key", key)
-		}
 		if err != nil {
 			return alex, keys, err
 		}
