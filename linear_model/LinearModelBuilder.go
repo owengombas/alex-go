@@ -60,8 +60,7 @@ func (self *LinearModelBuilder) Build() {
 		return
 	}
 
-	slope := (float64(self.count)*self.xySum - self.xSum*self.ySum) /
-		(float64(self.count)*self.xxSum - self.xSum*self.xSum)
+	slope := (float64(self.count)*self.xySum - self.xSum*self.ySum) / (float64(self.count)*self.xxSum - self.xSum*self.xSum)
 	intercept := (self.ySum - slope*self.xSum) / float64(self.count)
 	self.model.A = slope
 	self.model.B = intercept
