@@ -1,0 +1,20 @@
+\newcounter{OrganizationsCount}
+\newcommand{\organizationList}{} % Initialize empty command to hold author names
+
+\newcommand{\addOrganization}[6]{
+    \stepcounter{OrganizationsCount}
+    \expandafter\edef\csname organizationName\theOrganizationsCount\endcsname{#1}
+    \expandafter\edef\csname organizationAddress\theOrganizationsCount\endcsname{#2}
+    \expandafter\edef\csname organizationCity\theOrganizationsCount\endcsname{#3}
+    \expandafter\edef\csname organizationCountry\theOrganizationsCount\endcsname{#4}
+    \expandafter\edef\csname organizationURL\theOrganizationsCount\endcsname{#5}
+    \expandafter\edef\csname organizationID\theOrganizationsCount\endcsname{#6}
+
+    \affil[#6]{#1}
+}
+
+\newcommand{\iterateOrganizations}[1]{
+    \foreach \i in {1,...,\theOrganizationsCount}{%
+        #1%
+    }
+}

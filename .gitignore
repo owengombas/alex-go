@@ -2,3 +2,4 @@
 .idea
 keys_*.csv
 .venv
+_build

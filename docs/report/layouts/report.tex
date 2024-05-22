@@ -1,0 +1,30 @@
+% \input{sections/glossary.tex}
+\title{
+    \includegraphics[width=2cm]{\imagesDirectory/unibe.png}\hspace{2.5cm}
+    \includegraphics[width=2cm]{\imagesDirectory/unine.png}\hspace{2.5cm}
+    \includegraphics[width=2cm]{\imagesDirectory/unifr.png}
+    \vspace{1cm}\\
+    \documentTitle
+}
+\date{\deliveryDate}
+
+\headerFooter{%
+    \fancyhead[L]{}%
+    \fancyhead[C]{}%
+    \fancyhead[R]{}%
+}{\slshape\nouppercase{\leftmark}}{\thepage}{\deliveryDate}
+
+\begin{document}
+\nocite{*}
+
+\maketitle
+
+\tableofcontents
+% \printglossary[type=\acronymtype,title=Glossary]
+
+\subfile{sections/report.tex}
+\bibliography{sections/references.bib}
+
+\appendix
+
+\end{document}

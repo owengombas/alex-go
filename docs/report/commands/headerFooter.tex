@@ -1,0 +1,18 @@
+\newcommand{\headerFooter}[4]{%
+    \fancypagestyle{fancy}{%
+      #1%
+      \renewcommand{\headrulewidth}{0pt}%
+      \fancyfoot[L]{#2}%
+      \fancyfoot[C]{#3}%
+      \fancyfoot[R]{#4}%
+    }%
+    \fancypagestyle{plain}{%
+      #1%
+      \renewcommand{\headrulewidth}{0pt}%
+      \fancyfoot[L]{#2}%
+      \fancyfoot[C]{#3}%
+      \fancyfoot[R]{#4}%
+    }%
+    \pagestyle{fancy}%
+}
+

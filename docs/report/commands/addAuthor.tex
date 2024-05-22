@@ -1,0 +1,26 @@
+\newcounter{AuthorsCount}
+
+\newcommand{\addAuthor}[4]{
+    \stepcounter{AuthorsCount}
+    \expandafter\edef\csname authorFirstName\theAuthorsCount\endcsname{#1}
+    \expandafter\edef\csname authorLastName\theAuthorsCount\endcsname{#2}
+    \expandafter\edef\csname authorEmail\theAuthorsCount\endcsname{#3}
+    \expandafter\edef\csname authorOrganization\theAuthorsCount\endcsname{#4}
+    \author[#4]{#1 #2}
+}
+
+\newcommand{\iterateAuthors}[1]{
+    \foreach \i in {1,...,\theAuthorsCount}{%
+        #1%
+    }
+}
+
+\newcommand{\printAuthors}[2]{ % The first argument is the separator, the second is the property to print
+    \foreach \i in {1,...,\theAuthorsCount}{%
+        \foreach \j in {#2}{
+            \csname \j\i\endcsname%
+        }%
+        \ifnum\i<\theAuthorsCount#1\fi%
+    }
+}
+

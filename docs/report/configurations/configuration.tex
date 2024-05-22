@@ -1,0 +1,103 @@
+\pgfplotsset{compat=1.18}
+
+\renewcommand{\contentsname}{\tocTitle}
+\renewcommand{\chaptername}{\chapterPrefix}
+\renewcommand{\appendixname}{}
+
+\patchcmd{\chapter}{\if@openright\cleardoublepage\else\clearpage\fi}{}{}{}
+
+% Set the chapter title formatting
+% \AtBeginDocument{\renewcommand{\bibsection}{\chapter{\bibname}}}
+
+\titleformat{\chapter}[hang]{\normalfont\huge\bfseries}{\thechapter. }{0pt}{\chaptertitlename}
+\titlespacing{\chapter}{0cm}{0cm}{0cm}
+
+%\addtolength{\cftsecnumwidth}{10pt}
+\setlength{\cftbeforetoctitleskip}{0pt}
+\setlength{\cftaftertoctitleskip}{0pt}
+
+% Bibliography file
+\bibliographystyle{apalike}
+
+% Set the path to where the images are loaded
+\graphicspath{ {\imagesDirectory} }
+
+% Set the caption color
+\captionsetup{font={color=gray, small}, justification=centering}
+
+% Set the hyperlinks colors
+\hypersetup{
+  colorlinks=true,
+  linkcolor=\inLinkColor,
+  urlcolor=\outLinkColor,
+  citecolor=\bibLinkColor,
+}
+
+% Set the font family to sans-serif
+% \renewcommand{\familydefault}{\sfdefault}
+% \renewcommand{\thefootnote}{\fnsymbol{footnote}}
+
+\setcounter{footnote}{0}% Reset footnote counter
+\renewcommand*{\thefootnote}{\arabic{footnote}}
+
+\pgfplotsset{width=\textwidth}
+\usepgfplotslibrary{external}
+\usetikzlibrary{patterns}
+\newcommand{\drawge}{-- (rel axis cs:1,0) -- (rel axis cs:1,1) -- (rel axis cs:0,1) \closedcycle}
+\newcommand{\drawle}{-- (rel axis cs:1,1) -- (rel axis cs:1,0) -- (rel axis cs:0,0) \closedcycle}
+% LAYERS
+\pgfdeclarelayer{back} % to draw on background
+\pgfsetlayers{back,main} % set order
+
+% COLORS
+\colorlet{mylightred}{red!95!black!30}
+\colorlet{mylightblue}{blue!95!black!30}
+\colorlet{mylightgreen}{green!95!black!30}
+
+% STYLES
+\tikzset{ % node styles, numbered for easy mapping with \nstyle
+  >=latex, % for default LaTeX arrow head
+  node/.style={thick,circle,draw=#1!50!black,fill=#1,
+                 minimum size=\pgfkeysvalueof{/tikz/node size},inner sep=0.5,outer sep=0},
+  node/.default=mylightblue, % default color for node style
+  connect/.style={thick,blue!20!black!35}, %,line cap=round
+}
+
+% MACROS
+\def\lastlay{1} % index of last layer
+\def\lastN{1} % number of nodes in last layer
+\tikzset{
+  pics/network/.style={%
+    code={%
+      \foreach \N [count=\lay,remember={\N as \Nprev (initially 0);}]
+                   in {#1}{ % loop over layers
+        \xdef\lastlay{\lay} % store for after loop
+        \xdef\lastN{\N} % store for after loop
+        \foreach \i [evaluate={%
+              \y=\pgfkeysvalueof{/tikz/node dist}*(\N/2-\i+0.5);
+              \x=\pgfkeysvalueof{/tikz/layer dist}*(\lay-1);
+              \prev=int(\lay-1);
+          }%
+        ] in {1,...,\N}{ % loop over nodes
+          \node[node=\pgfkeysvalueof{/tikz/node color}] (-\lay-\i) at (\x,\y) {};
+          \ifnum\Nprev>0 % connect to previous layer
+            \foreach \j in {1,...,\Nprev}{ % loop over nodes in previous layer
+              \begin{pgfonlayer}{back} % draw on back
+                \draw[connect] (-\prev-\j) -- (-\lay-\i);
+              \end{pgfonlayer}
+            }
+          \fi
+        } % close \foreach node \i in layer
+      } % close \foreach layer \N
+      \coordinate (-west) at (-\pgfkeysvalueof{/tikz/node size}/2,0); % name first layer
+      \foreach \i in {1,...,\lastN}{ % name nodes in last layer
+        \node[node,draw=none,fill=none] (-last-\i) at (-\lastlay-\i) {};
+      }
+    } % close code
+  }, % close pics
+  layer dist/.initial=1.5, % horizontal distance between layers
+  node dist/.initial=1.0, % vertical distance between nodes in same layers
+  node color/.initial=mylightblue, % horizontal distance between layers
+  node size/.initial=15pt, % size of nodes
+}
+%\tikzexternalize[prefix=\buildDirectory/]
