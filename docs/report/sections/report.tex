@@ -52,7 +52,7 @@ It could easily happen that the sum of all keys squared overflow the maximum num
 
 \textit{There are three floating point types: float, double, and long double. The type double provides at least as much precision as float, and the type long double provides at least as much precision as double. The set of values of the type float is a subset of the set of values of the type double; the set of values of the type double is a subset of the set of values of the type long double. The value representation of floating-point types is implementation-defined. Integral and floating types are collectively called arithmetic types. Specializations of the standard template std::numeric\_limits (18.3) shall specify the maximum and minimum values of each arithmetic type for an implementation.}.
 
-The implementation of \texttt{long double} depends on the compiler and also the acrutecture the CPU it runs on, referring to this StackOverflow question \url{https://stackoverflow.com/questions/14221612/difference-between-long-double-and-double-in-c-and-c}. But in general a \texttt{long double} can hold larger values than a simple \texttt{double} type.
+The implementation of \texttt{long double} depends on the compiler and also the architecture of the CPU it runs on, referring to this StackOverflow question \url{https://stackoverflow.com/questions/14221612/difference-between-long-double-and-double-in-c-and-c}. But in general a \texttt{long double} can hold larger values than a simple \texttt{double} type.
 
 However the largest floating point type provided by Go is the \texttt{float64} type. So I chose to stick with this type, otherwise it would have been possible to use the type \texttt{Float} from the math/big\footnote{\url{https://pkg.go.dev/math/big}} package provided by Go's standard library.
 
@@ -73,13 +73,19 @@ To evaluate the performance of my ALEX implementation, I compared it against a B
 
 The benchmarks measure the time required to sequentially insert 1k, 10k, 100k, and 1m keys without using bulk loading. The keys are randomly generated using the \texttt{rand} package from the \texttt{math} standard library in Go. For reproducibility, a seed value of $42$ was used to generate the random keys.
 
+Both benchmark measure the nanoseconds it requires per oprations (ns/op) for inserting/looking up for a certain amounf of keys.
+
 \section{B+Tree vs ALEX inserts performances}
-\figureWithCaption{inserts}{Total time in seconds to perform $N$ sequential inserts in ALEX and B+Tree}{\textwidth}
+\figureWithCaption{inserts}{Total time in seconds to perform $N$ sequential inserts in ALEX and B+Tree (log scale).}{\textwidth}
 \section{B+Tree vs ALEX lookup performances}
-\figureWithCaption{lookups}{Total time in seconds to perform $N$ sequential lookups in ALEX and B+Tree}{\textwidth}
+\figureWithCaption{lookups}{Total time in seconds to perform $N$ sequential lookups in ALEX and B+Tree (log scale).}{\textwidth}
 
 \let\clearpage\relax
 \chapter{Conclusion}
-My implementation benchmarks differ from the results obtained by the authors, likely due to the implementation trade-offs I made to prioritize the educational goals of this project. In the benchmarks, we observe that ALEX performs worse initially but shows less variability as the number of keys increases. By the time we reach 1 million keys, ALEX outperforms a B+Tree in terms of the time required for sequential inserts and lookups.
+My implementation benchmarks shows that the insert performances are not quite constant while performing sequential insertions; this is due to the fact that the dataset insert is different and therefore the distribution of the keys might helps to improve the time required for inserts (in terms of ns/op).
 
-In my opinion, ALEX is a great data structure with significant potential. However, it involves numerous corner cases that need careful handling, making it risky to deploy in production environments. If a single corner case isn't correctly handled or if the precision of a specific floating point variable isn't sufficient, the entire structure can fail. Additionally, type overflow can occur easily. Despite these challenges, ALEX promises excellent performance and helps us imagine a bright future for these type of data structures.
+For lookup we can see that ALEX performs better than a B+Tree but this is not a general rule, ALEX lookup time tends to increase as the number of keys stored in ALEX increase. While B+Tree seems constant until to breaks at 10m keys stored. In the benchmarks, we observe that ALEX performs worse initially but shows less variability as the number of keys increases.
+
+It might not totally reflect the results from the authors but it is likely due to the implementation trade-offs I made to prioritize the educational goals of this project.
+
+In my opinion, ALEX is a great data structure with a great potential. However, it involves numerous corner cases that need careful handling, making it risky to deploy in production environments. If a single corner case isn't correctly handled or if the precision of a specific floating point variable isn't sufficient, the entire structure can fail. Additionally, type overflow can occur easily. Despite these challenges, ALEX promises excellent performance and helps us imagine a bright future for these type of data structures.
