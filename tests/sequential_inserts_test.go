@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestSequentialInserts1kto1m(t *testing.T) {
+func TestSequentialInserts1kto10m(t *testing.T) {
 	for i := 1_000; i <= 10_000_000; i *= 10 {
 		t.Run(fmt.Sprintf("SequentialInserts%d", i), func(t *testing.T) {
 			keys := GenerateRandomKeys(i)
