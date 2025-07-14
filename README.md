@@ -1,7 +1,5 @@
 # ALEX: An Updatable Adaptive Learned Index (Go implementation)
-An unofficial Go implmentation of the "ALEX: An Updatable Adaptive Learned Index" paper (https://arxiv.org/abs/1905.08898).
-This implementation should not yet be considered production ready, it has been simplified to make it easier to understand the core concepts of the paper.
-It is based on the C++ implementation by the authors of the paper (https://github.com/microsoft/ALEX).
+An unofficial Go implmentation of the "ALEX: An Updatable Adaptive Learned Index" paper (https://arxiv.org/abs/1905.08898). This implementation has been simplified to make it easier to understand the core concepts of the paper. It is based on the C++ implementation of the paper (https://github.com/microsoft/ALEX).
 
 ## Features supported
 - [x] Insertion
